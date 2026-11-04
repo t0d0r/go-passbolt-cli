@@ -71,6 +71,7 @@ func init() {
 	rootCmd.PersistentFlags().String("userPrivateKey", "", "Passbolt User Private Key")
 	rootCmd.PersistentFlags().String("userPrivateKeyFile", "", "Passbolt User Private Key File, if set then the userPrivateKey will be Overwritten with the File Content")
 	rootCmd.PersistentFlags().String("userPassword", "", "Passbolt User Password")
+	rootCmd.PersistentFlags().String("passwordStore", "none", "Where to keep the private key password between runs: none or keyring (macOS Keychain, Secret Service, Windows Credential Manager); ignored if userPassword is set")
 	rootCmd.PersistentFlags().String("mfaMode", "interactive-totp", "How to Handle MFA, the following Modes exist: none, interactive-totp and noninteractive-totp")
 
 	rootCmd.PersistentFlags().String("totpToken", "", "Token to generate TOTP's, only used in nointeractive-totp mode")
@@ -100,6 +101,7 @@ func init() {
 	viper.BindPFlag("serverAddress", rootCmd.PersistentFlags().Lookup("serverAddress"))
 	viper.BindPFlag("userPrivateKey", rootCmd.PersistentFlags().Lookup("userPrivateKey"))
 	viper.BindPFlag("userPassword", rootCmd.PersistentFlags().Lookup("userPassword"))
+	viper.BindPFlag("passwordStore", rootCmd.PersistentFlags().Lookup("passwordStore"))
 	viper.BindPFlag("mfaMode", rootCmd.PersistentFlags().Lookup("mfaMode"))
 	viper.BindPFlag("totpToken", rootCmd.PersistentFlags().Lookup("totpToken"))
 	viper.BindPFlag("mfaTotpToken", rootCmd.PersistentFlags().Lookup("mfaTotpToken"))

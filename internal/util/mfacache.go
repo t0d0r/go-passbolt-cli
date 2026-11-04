@@ -11,8 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/ProtonMail/gopenpgp/v3/crypto"
 )
 
 // MFACookieName is the cookie Passbolt sets after a successful MFA verification.
@@ -40,15 +38,15 @@ type MFACookieCache struct {
 // file name is derived from the server address and the key fingerprint, so
 // different servers or users never share a cookie.
 func NewMFACookieCache(serverAddress, userPrivateKey string) (*MFACookieCache, error) {
-	key, err := crypto.NewKeyFromArmored(userPrivateKey)
+	fp, err := keyFingerprint(userPrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("reading user key: %w", err)
+		return nil, err
 	}
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return nil, fmt.Errorf("finding cache directory: %w", err)
 	}
-	sum := sha256.Sum256([]byte(serverAddress + "\x00" + key.GetFingerprint()))
+	sum := sha256.Sum256([]byte(serverAddress + "\x00" + fp))
 	name := hex.EncodeToString(sum[:16]) + ".json"
 	return &MFACookieCache{path: filepath.Join(dir, "go-passbolt-cli", "mfa", name)}, nil
 }

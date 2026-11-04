@@ -87,23 +87,35 @@ func GetClient(ctx context.Context) (*api.Client, error) {
 		return nil, fmt.Errorf("userPrivateKey is not defined")
 	}
 
-	userPassword := viper.GetString("userPassword")
-	if userPassword == "" {
-		cliPassword, err := ReadPassword("Enter Password:")
-		if err != nil {
-			Println()
-			return nil, fmt.Errorf("reading Password: %w", err)
-		}
-
-		userPassword = cliPassword
-		Println()
-	}
-
 	httpClient, err := GetHTTPClient()
 	if err != nil {
 		return nil, err
 	}
-	client, err := api.NewClient(httpClient, "", serverAddress, userPrivateKey, userPassword)
+
+	// The MFA cookie transport must be installed before api.NewClient, which
+	// takes a copy of httpClient.
+	mfaMode := viper.GetString("mfaMode")
+	mfaRemember := mfaMode == "interactive-totp" && viper.GetBool("mfaRemember")
+	var mfaCache *MFACookieCache
+	if mfaRemember {
+		mfaCache, err = NewMFACookieCache(serverAddress, userPrivateKey)
+		if err != nil {
+			Eprintf("Warning: MFA cookie cache disabled: %v\n", err)
+			mfaCache = nil
+		} else if cookie, ok := mfaCache.Load(time.Now()); ok {
+			if err := withMFACookie(httpClient, serverAddress, cookie); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	prompt := func() (string, error) {
+		pw, err := ReadPassword("Enter Password:")
+		Println()
+		return pw, err
+	}
+	client, err := newUnlockedClient(httpClient, serverAddress, userPrivateKey,
+		viper.GetString("userPassword"), viper.GetString("passwordStore"), prompt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Client: %w", err)
 	}
@@ -120,21 +132,8 @@ func GetClient(ctx context.Context) (*api.Client, error) {
 		}
 	}
 
-	switch viper.GetString("mfaMode") {
+	switch mfaMode {
 	case "interactive-totp":
-		var mfaCache *MFACookieCache
-		mfaRemember := viper.GetBool("mfaRemember")
-		if mfaRemember {
-			mfaCache, err = NewMFACookieCache(serverAddress, userPrivateKey)
-			if err != nil {
-				Eprintf("Warning: MFA cookie cache disabled: %v\n", err)
-				mfaCache = nil
-			} else if cookie, ok := mfaCache.Load(time.Now()); ok {
-				if err := withMFACookie(httpClient, serverAddress, cookie); err != nil {
-					return nil, err
-				}
-			}
-		}
 		client.MFACallback = func(ctx context.Context, c *api.Client, res *api.APIResponse) (http.Cookie, error) {
 			challenge := api.MFAChallenge{}
 			err := json.Unmarshal(res.Body, &challenge)

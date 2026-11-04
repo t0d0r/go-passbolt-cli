@@ -16,6 +16,16 @@
   - `internal/cmd/root.go`: flag/config key `mfaRemember` (default true).
   - `internal/util/mfacache_test.go`: unit tests.
 
+- Passphrase in the OS keyring (specs/auth-cache.md, part 2):
+  `internal/util/passwordstore.go` (`newUnlockedClient`, `ForgetPassword`),
+  flag/config key `passwordStore` (`none`|`keyring`), new command
+  `passbolt lock` (`internal/cmd/lock.go`), dependency
+  `github.com/zalando/go-keyring` v0.2.8.
+- Bug fixed: the MFA cookie transport was installed after `api.NewClient`,
+  which copies the http.Client, so the cached cookie was never sent. The
+  regression test `TestGetClient_SendsCachedMFACookie` fails on the old code
+  and passes on the new.
+
 ## Decisions
 
 - Library `go-passbolt` stays unmodified; the cached MFA cookie is injected
@@ -29,7 +39,9 @@
   tests). Two gosec findings were false positives: request cookie attributes
   (set anyway) and the 0700 cache directory (annotated `nolint:gosec`).
 - Not yet tried against a real Passbolt server.
-- Passphrase cache design (keyring vs agent) not decided.
+- Keyring has no TTL on macOS; `passbolt lock` is the manual lock.
+- Headless Linux hosts have no Secret Service; the keyring falls back to the
+  prompt there.
 - Server-side behaviour (policy enabled, cookie survives logout) to be
   confirmed against the real server.
 
@@ -40,6 +52,8 @@
 - todo/todo.md, session/2026-11-05-session-cache.md
 - internal/util/mfacache.go, internal/util/mfacache_test.go
 - internal/util/client.go, internal/cmd/root.go
+- internal/util/passwordstore.go, internal/util/passwordstore_test.go
+- internal/cmd/lock.go, go.mod, go.sum
 
 ## How to run / verify
 
@@ -51,8 +65,8 @@ make build-linux    # bin/passbolt-linux-amd64 + sha256
 
 ## Next step
 
-Decide the passphrase cache design (specs/auth-cache.md, part 2), then try
-the build against the real server (todo item 3).
+Try `make build` on macOS against the real server with
+`passwordstore = 'keyring'` in the config (todo items 3 and 7).
 
 ## Security Note
 

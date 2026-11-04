@@ -56,19 +56,55 @@ Still to confirm against the server version in use.
 - Unit tests: save/load, Max-Age, expiry removal, session cookie not saved,
   corrupt file, file/dir permissions, transport adds/keeps cookie.
 
-## Part 2: passphrase cache (open, design not decided)
+## Part 2: passphrase in the OS keyring (implemented)
 
-The passphrase is needed on every run because the CLI decrypts the private
-key locally. Options:
+### Decision
 
-| Option | How | Pros | Cons |
-|---|---|---|---|
-| A. Kernel keyring / OS keychain | Linux: `keyctl` user keyring entry with a timeout; macOS: Keychain item | No daemon, kernel memory is not swapped, TTL enforced by kernel | Two platform backends; any process of the same uid can read it during the TTL |
-| B. Agent | `passbolt agent` holds the passphrase in memory with a TTL, unix socket 0600 in `$XDG_RUNTIME_DIR` (like ssh-agent) | One code path for all platforms, can lock on demand | Daemon to manage; process memory may be swapped unless `mlock`ed |
-| C. Plain config `userPassword` | Already supported upstream | No code | Passphrase on disk next to the private key; rejected |
+Use the OS keyring through `github.com/zalando/go-keyring` v0.2.8 (no cgo):
+macOS Keychain via `/usr/bin/security`, Secret Service over D-Bus on Linux,
+Credential Manager on Windows. Chosen over an own agent because there is no
+daemon to run. On macOS the password is written through `security -i` on
+stdin, so it never appears in a process argument list.
 
-Recommendation: A, with a default TTL of 8 hours and a `passbolt lock`
-command that removes the entry.
+Rejected: plain `userPassword` in the config file (on disk next to the
+private key). An own agent (ssh-agent style) stays an option for headless
+Linux hosts, where no Secret Service is running.
+
+### CLI behaviour
+
+- New flag / config key `passwordStore`: `none` (default, upstream
+  behaviour) or `keyring`.
+- Order: `userPassword` from config/flag wins and is never copied to the
+  keyring; else the keyring item; else the prompt.
+- Item: service `go-passbolt-cli`, account `<key fingerprint>@<serverAddress>`.
+- `api.NewClient` unlocks the private key locally, so the password is checked
+  without network access:
+  - a prompted password is saved only after it unlocked the key;
+  - a stored password that no longer unlocks the key (passphrase changed) is
+    removed and the user is prompted once.
+- If the keyring is unavailable (e.g. no D-Bus session), the CLI prints a
+  warning and falls back to the prompt.
+- `passbolt lock` removes the keyring item and the MFA cookie cache entry.
+
+### Limits
+
+- No TTL: the Keychain item stays until `passbolt lock` or manual removal.
+  It is protected by the login keychain, which is unlocked while the user
+  is logged in.
+- Items created by `/usr/bin/security` are readable by that tool without a
+  prompt, so any process running as the same user can read the password
+  while the login keychain is unlocked.
+
+### Acceptance
+
+- `passwordStore = 'keyring'`: first command prompts, later commands do not.
+- Changed passphrase: one prompt, the item is replaced.
+- Unit tests (mock keyring): prompt once then keyring, wrong password not
+  stored, stale item replaced, `none` does not touch the keyring, config
+  password wins, `ForgetPassword`.
+- Regression test: `GetClient` sends the cached MFA cookie on the first
+  request (the transport must be installed before `api.NewClient` copies the
+  http.Client).
 
 ## Security Note
 
@@ -77,5 +113,6 @@ command that removes the entry.
   and can be revoked server-side by resetting MFA for the user.
 - Never combine the MFA cookie cache with a stored passphrase in the same
   plain-text file; that would reduce the login to "read one file".
-- On shared hosts, every process running as the same user can read both the
-  cache file and (option A/B) the cached passphrase during its TTL.
+- Every process running as the same user can read the MFA cache file and,
+  while the login keychain is unlocked, the keyring item. Run `passbolt lock`
+  when leaving the machine for long.
