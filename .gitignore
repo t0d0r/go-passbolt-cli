@@ -24,3 +24,11 @@ coverage.html
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Local fork additions
+!Makefile
+bin/
+.env
+.env.*
+*.pem
+*.key
