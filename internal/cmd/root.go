@@ -81,6 +81,8 @@ func init() {
 	rootCmd.PersistentFlags().MarkDeprecated("totpOffset", "use --mfaTotpOffset instead")
 	rootCmd.PersistentFlags().Duration("mfaTotpOffset", time.Duration(0), "TOTP Generation offset only used in noninteractive-totp mode")
 
+	rootCmd.PersistentFlags().Bool("mfaRemember", false, "Opt-in: ask the server to remember MFA for this device (30 days, if the server policy allows) and cache the cookie locally; https only, interactive-totp mode only")
+
 	rootCmd.PersistentFlags().Uint("mfaRetrys", 3, "How often to retry TOTP Auth, only used in nointeractive modes")
 	rootCmd.PersistentFlags().Duration("mfaDelay", time.Second*10, "Delay between MFA Attempts, only used in noninteractive modes")
 
@@ -103,6 +105,7 @@ func init() {
 	viper.BindPFlag("mfaTotpToken", rootCmd.PersistentFlags().Lookup("mfaTotpToken"))
 	viper.BindPFlag("totpOffset", rootCmd.PersistentFlags().Lookup("totpOffset"))
 	viper.BindPFlag("mfaTotpOffset", rootCmd.PersistentFlags().Lookup("mfaTotpOffset"))
+	viper.BindPFlag("mfaRemember", rootCmd.PersistentFlags().Lookup("mfaRemember"))
 	viper.BindPFlag("mfaRetrys", rootCmd.PersistentFlags().Lookup("mfaRetrys"))
 	viper.BindPFlag("mfaDelay", rootCmd.PersistentFlags().Lookup("mfaDelay"))
 

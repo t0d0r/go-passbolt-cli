@@ -122,6 +122,22 @@ func GetClient(ctx context.Context) (*api.Client, error) {
 
 	switch viper.GetString("mfaMode") {
 	case "interactive-totp":
+		var mfaCache *MFACookieCache
+		// Remember-me only over https: the cookie is a bearer token for the
+		// second factor and must not travel in clear text.
+		mfaRemember := viper.GetBool("mfaRemember") &&
+			strings.HasPrefix(strings.ToLower(serverAddress), "https://")
+		if mfaRemember {
+			mfaCache, err = NewMFACookieCache(serverAddress, userPrivateKey)
+			if err != nil {
+				Eprintf("Warning: MFA cookie cache disabled: %v\n", err)
+				mfaCache = nil
+			} else if cookie, ok := mfaCache.Load(time.Now()); ok {
+				if err := withMFACookie(httpClient, serverAddress, cookie); err != nil {
+					return nil, err
+				}
+			}
+		}
 		client.MFACallback = func(ctx context.Context, c *api.Client, res *api.APIResponse) (http.Cookie, error) {
 			challenge := api.MFAChallenge{}
 			err := json.Unmarshal(res.Body, &challenge)
@@ -139,8 +155,9 @@ func GetClient(ctx context.Context) (*api.Client, error) {
 					return http.Cookie{}, fmt.Errorf("reading TOTP: %w", err)
 				}
 				Printf("\n")
-				req := api.MFAChallengeResponse{
-					TOTP: code,
+				req := mfaChallengeResponse{
+					TOTP:     code,
+					Remember: mfaRemember,
 				}
 				var raw *http.Response
 				raw, _, err = c.DoCustomRequestAndReturnRawResponseV5(ctx, "POST", "mfa/verify/totp.json", req, nil)
@@ -152,7 +169,15 @@ func GetClient(ctx context.Context) (*api.Client, error) {
 				} else {
 					// MFA worked so lets find the cookie and return it
 					for _, cookie := range raw.Cookies() {
-						if cookie.Name == "passbolt_mfa" {
+						if cookie.Name == MFACookieName {
+							if mfaCache != nil {
+								saved, err := mfaCache.Save(*cookie, time.Now())
+								if err != nil {
+									Eprintf("Warning: saving MFA cookie: %v\n", err)
+								} else if !saved {
+									Eprintln("Note: server did not grant 'remember this device' (policy disabled?), MFA will be asked again next time")
+								}
+							}
 							return *cookie, nil
 						}
 					}

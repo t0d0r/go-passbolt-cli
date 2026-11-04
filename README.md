@@ -141,6 +141,10 @@ You can set up MFA also using the configuration sub command. Only TOTP is suppor
 | `interactive-totp`    | prompts for interactive entry of TOTP Codes.                                                                                                                                                                      |
 | `noninteractive-totp` | automatically generates TOTP codes when challenged. It requires the `mfaTotpToken` flag to be set to your TOTP secret. You can configure the behavior using the `mfaDelay`, `mfaRetrys` and `mfaTotpOffset` flags |
 
+## Remember MFA for this device
+
+In `interactive-totp` mode, `--mfaRemember` (config key `mfaRemember`, default `false`) asks the server to remember the TOTP verification for this device for 30 days, if the organisation policy "Remember a month" is enabled, and caches the cookie in `go-passbolt-cli/mfa` under the user cache directory with mode 0600. The cookie is only used over https. Delete that directory to forget it locally; a remembered token stays valid on the server until it expires, so reset MFA for the user in Passbolt to revoke it.
+
 # Server Verification
 
 To enable server verification, you need to run `passbolt verify` once, after that the server will always be verified if the same config is used.
