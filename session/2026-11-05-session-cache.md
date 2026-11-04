@@ -35,6 +35,15 @@
   without saving on bad input).
 - `passbolt list folder` works on macOS with `passwordStore = keyring`.
 
+- `passbolt tui` (specs/tui.md): package `internal/tui` (data/tree,
+  PassboltStore with re-login retry, clipboard backends pbcopy / wl-copy /
+  xclip / xsel / OSC 52, bubbletea model with browse, search and detail
+  modes), command `internal/cmd/tui.go`. Dependencies bubbletea v1.3.10,
+  lipgloss v1.1.0. Secrets fetched per resource on demand; copied
+  passwords/TOTP cleared after 30 s and on quit only if unchanged; server
+  text stripped of control and bidi characters. 15 tests, `-race` clean.
+  Not yet run against the real server.
+
 ## Decisions
 
 - Library `go-passbolt` stays unmodified; the cached MFA cookie is injected
@@ -64,6 +73,7 @@
 - internal/util/passwordstore.go, internal/util/passwordstore_test.go
 - internal/cmd/lock.go, go.mod, go.sum
 - internal/cmd/wizard.go, internal/cmd/wizard_test.go, specs/wizard.md
+- internal/tui/*.go, internal/cmd/tui.go, specs/tui.md
 
 ## How to run / verify
 
@@ -75,8 +85,9 @@ make build-linux    # bin/passbolt-linux-amd64 + sha256
 
 ## Next step
 
-Run `passbolt wizard` end to end on a fresh config; then decide the
-password store for headless Linux hosts (specs/auth-cache.md).
+Run `passbolt tui` against the real server; run `passbolt wizard` end to
+end on a fresh config; then decide the password store for headless Linux
+hosts (specs/auth-cache.md).
 
 ## Security Note
 

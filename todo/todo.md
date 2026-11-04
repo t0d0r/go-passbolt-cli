@@ -11,3 +11,6 @@
 - [ ] `make build-linux`, copy to the Linux host, compare sha256, install to /usr/local/bin (with host audit trail)
 - [x] `passbolt wizard` (specs/wizard.md) - unit tests pass, smoke-tested against the real server up to the key step
 - [ ] run `passbolt wizard` end to end on a fresh config (login test + save)
+- [x] `passbolt tui` (specs/tui.md) - 15 model/store tests pass (also with -race), not yet run against the real server
+- [ ] try `passbolt tui` against the real server: load time with many resources, v5 metadata, clipboard clear
+- [ ] tui: OSC 52 inside tmux needs `set -g allow-passthrough on` / `set-clipboard on`; document or detect
