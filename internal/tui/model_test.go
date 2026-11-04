@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/passbolt/go-passbolt/helper"
 )
 
@@ -51,10 +52,12 @@ func testData() *fakeStore {
 			{ID: "B", ParentID: "A", Name: "Beta"},
 		},
 		entries: []Entry{
-			{ID: "e1", Name: "Root Mail", Username: "root@example.com", URI: "https://mail.example.com"},
+			{ID: "e1", Name: "Root Mail", Username: "root@example.com", URI: "https://mail.example.com",
+				Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Modified: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
 			{ID: "e2", FolderID: "A", Name: "Alpha Site", Username: "alpha"},
 			{ID: "e3", FolderID: "B", Name: "Beta DB", Username: "dbadmin", Description: "primary"},
-			{ID: "e4", Name: "\x1b[31mEvil\x07", Username: "x"},
+			{ID: "e4", Name: "\x1b[31mEvil\x07", Username: "x",
+				Created: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), Modified: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)},
 		},
 		secrets: map[string]Secret{
 			"e1": {Password: "s3cret-root"},
@@ -94,9 +97,17 @@ func key(s string) tea.KeyMsg {
 func newLoaded(t *testing.T, store *fakeStore, clip *fakeClip) *Model {
 	t.Helper()
 	m := New(store, clip, "https://pb.example.com", time.Second)
-	m.ClearAfter = time.Millisecond
+	m.tickEvery = time.Millisecond
+	t0 := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return t0 }
 	m.Update(m.Init()())
 	return m
+}
+
+// advance moves the fake clock of m forward.
+func advance(m *Model, d time.Duration) {
+	cur := m.now()
+	m.now = func() time.Time { return cur.Add(d) }
 }
 
 // press sends keys and returns the command of the last one.
@@ -247,6 +258,15 @@ func TestCopyPasswordIsCleared(t *testing.T) {
 	if !strings.Contains(m.status, "copied") {
 		t.Errorf("status = %q", m.status)
 	}
+	if !strings.Contains(m.View(), "clears in 30s") {
+		t.Error("countdown not shown")
+	}
+	advance(m, 10*time.Second)
+	tick = step(t, m, tick)
+	if clip.text != "s3cret-root" || !strings.Contains(m.View(), "clears in 20s") {
+		t.Fatal("cleared too early or countdown wrong")
+	}
+	advance(m, 21*time.Second)
 	step(t, m, tick)
 	if clip.text != "" {
 		t.Errorf("clipboard not cleared: %q", clip.text)
@@ -260,26 +280,32 @@ func TestClearSkippedWhenClipboardChanged(t *testing.T) {
 
 	tick := step(t, m, press(m, "c"))
 	clip.text = "something the user copied"
+	advance(m, 31*time.Second)
 	step(t, m, tick)
 	if clip.text != "something the user copied" {
 		t.Errorf("foreign clipboard content was cleared")
 	}
 }
 
-func TestStaleClearTimerIgnored(t *testing.T) {
+func TestCopyAgainRestartsClearTimer(t *testing.T) {
 	clip := &fakeClip{readable: true}
 	m := newLoaded(t, testData(), clip)
 	openDetail(t, m, "root mail")
 
-	tick1 := step(t, m, press(m, "c"))
-	tick2 := press(m, "c") // secret cached now, copies directly
-	step(t, m, tick1)
-	if clip.text != "s3cret-root" {
-		t.Fatal("stale timer cleared the clipboard")
+	tick := step(t, m, press(m, "c"))
+	advance(m, 20*time.Second)
+	if cmd := press(m, "c"); cmd != nil { // clock already running
+		t.Error("second copy started a second clock")
 	}
-	step(t, m, tick2)
+	advance(m, 11*time.Second) // 31 s after the first copy, 11 s after the second
+	tick = step(t, m, tick)
+	if clip.text != "s3cret-root" {
+		t.Fatal("cleared based on the first copy")
+	}
+	advance(m, 20*time.Second)
+	step(t, m, tick)
 	if clip.text != "" {
-		t.Error("current timer did not clear")
+		t.Error("not cleared 30 s after the second copy")
 	}
 }
 
@@ -287,7 +313,9 @@ func TestUnreadableClipboardClearedUnconditionally(t *testing.T) {
 	clip := &fakeClip{readable: false}
 	m := newLoaded(t, testData(), clip)
 	openDetail(t, m, "root mail")
-	step(t, m, step(t, m, press(m, "c")))
+	tick := step(t, m, press(m, "c"))
+	advance(m, 31*time.Second)
+	step(t, m, tick)
 	if clip.text != "" {
 		t.Error("OSC 52 style clipboard not cleared")
 	}
@@ -487,5 +515,104 @@ func TestSearchDeleteWord(t *testing.T) {
 		if m.query != "" {
 			t.Errorf("%s: query = %q, want empty", k, m.query)
 		}
+	}
+}
+
+func TestSortModes(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	entryOrder := func() []string {
+		var ids []string
+		for _, r := range m.rows() {
+			if r.entry != nil {
+				ids = append(ids, r.entry.ID)
+			}
+		}
+		return ids
+	}
+
+	press(m, "s")
+	if m.sort != sortModified {
+		t.Fatalf("sort = %v, want last modified", m.sort)
+	}
+	if got := entryOrder(); len(got) != 2 || got[0] != "e1" { // e1 modified 2026-10, e4 2026-06
+		t.Errorf("modified order = %v, want e1 first", got)
+	}
+	if !strings.Contains(m.View(), "2026-10-01") {
+		t.Error("date column not shown when sorting by time")
+	}
+	if rows := m.rows(); rows[0].folder == nil {
+		t.Error("folders should stay first")
+	}
+
+	press(m, "s")
+	if got := entryOrder(); m.sort != sortCreated || got[0] != "e4" { // e4 created 2026-06, e1 2026-01
+		t.Errorf("created order = %v (sort %v), want e4 first", got, m.sort)
+	}
+
+	press(m, "s")
+	if m.sort != sortName {
+		t.Error("sort did not cycle back to name")
+	}
+
+	// search with an empty query lists everything; tab sorts it
+	press(m, "/", "tab")
+	if m.sort != sortModified || m.rows()[0].entry.ID != "e1" {
+		t.Error("tab in search did not sort by last modified")
+	}
+}
+
+func TestTwoPaneLayout(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	v := m.View()
+	for _, want := range []string{"Folder", "sort: name", "1/3", "Contains", "passbolt"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view lacks %q", want)
+		}
+	}
+	press(m, "j")
+	if v := m.View(); !strings.Contains(v, "Preview") || !strings.Contains(v, "Modified") {
+		t.Error("preview of a resource not shown")
+	}
+	for i, line := range strings.Split(m.View(), "\n") {
+		if w := ansi.StringWidth(line); w > 120 {
+			t.Errorf("line %d is %d columns wide, terminal is 120", i, w)
+		}
+	}
+	if strings.Contains(m.View(), "s3cret") {
+		t.Error("preview shows a secret")
+	}
+}
+
+func TestNarrowTerminalFits(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 50, Height: 12})
+	for _, mode := range []func(){func() {}, func() { press(m, "/") }, func() { press(m, "enter") }} {
+		mode()
+		for i, line := range strings.Split(m.View(), "\n") {
+			if w := ansi.StringWidth(line); w > 50 {
+				t.Errorf("line %d is %d columns wide, terminal is 50", i, w)
+			}
+		}
+	}
+}
+
+func TestLiveTOTPShownWithPassword(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	openDetail(t, m, "beta db")
+	cmd := step(t, m, press(m, "p"))
+	want, err := helper.GenerateOTPCode(totpKey, m.now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(m.View(), want[:3]+" "+want[3:]) {
+		t.Errorf("live TOTP %s not shown", want)
+	}
+	if cmd == nil {
+		t.Error("no clock started for the live TOTP code")
+	}
+	press(m, "p")
+	if strings.Contains(m.View(), want[:3]+" "+want[3:]) {
+		t.Error("TOTP code still shown after hiding")
 	}
 }

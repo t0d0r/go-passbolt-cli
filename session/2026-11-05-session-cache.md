@@ -47,6 +47,12 @@
   it as ctrl+h, only DEL as backspace). ctrl+h is now handled like
   backspace in every mode; backspace on an empty search query leaves search;
   ctrl+w / alt+backspace delete a word.
+- tui redesign: `internal/tui/view.go` with rounded-border boxes, header
+  bar, two panes from 100 columns (list + preview), status line with
+  clipboard countdown, key-cap hints, adaptive colours. Sort `s`/`tab`:
+  name, last modified, last created; created/modified shown in preview,
+  detail and as a list column. Clipboard clear now driven by a one-second
+  clock (also drives the live TOTP code in the detail view).
 
 ## Decisions
 

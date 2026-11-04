@@ -119,6 +119,12 @@ func (s *PassboltStore) decryptMeta(ctx context.Context, r api.Resource) (Entry,
 		return Entry{}, fmt.Errorf("get resource type: %w", err)
 	}
 	e := Entry{ID: r.ID, FolderID: r.FolderParentID}
+	if r.Created != nil {
+		e.Created = r.Created.Time
+	}
+	if r.Modified != nil {
+		e.Modified = r.Modified.Time
+	}
 	if !strings.HasPrefix(rType.Slug, "v5-") {
 		e.Name, e.Username, e.URI, e.Description = r.Name, r.Username, r.URI, r.Description
 		return e, nil

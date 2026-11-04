@@ -27,8 +27,16 @@ was released one week before this decision and is not used yet.
 
 ## Screens and keys
 
-Header: server address and the current folder path. Footer: status message
-and key hints. `?` toggles a help line. All displayed text from the server
+Layout: a header bar (badge, server, folder/resource counts), the main
+area in rounded-border boxes (title in the top border, sort mode and
+position in the bottom border), a status line (coloured by kind; while a
+secret is in the clipboard it shows "clears in Ns") and a key-hint line
+with key caps. From 100 columns the browse and search screens show two
+panes: the list (3/5) and a preview of the selected row (folder contents,
+or resource fields, created/modified, description; never secrets). Colours
+adapt to light and dark backgrounds. `?` toggles the full key list. Text is
+truncated ANSI- and wide-character-aware so no line exceeds the terminal
+width. All displayed text from the server
 is stripped of control characters (no terminal escape injection through
 resource names).
 
@@ -43,6 +51,7 @@ each sorted by name. Columns: name, username, URI.
 | enter, l, right | open folder / open resource detail |
 | backspace (DEL or ^H), h, left | parent folder |
 | / | search |
+| s, tab | cycle sort: name, last modified, last created (newest first; folders stay first, by name) |
 | c / u | copy password / username of the selected resource |
 | r | reload |
 | q, ctrl+c | quit |
@@ -52,13 +61,16 @@ each sorted by name. Columns: name, username, URI.
 Typing filters all resources (every folder) by case-insensitive substring;
 each space-separated term must match name, username, URI or folder path.
 Rows show the folder path. up/down move, enter opens the detail, esc leaves
-search. Backspace (DEL or ^H) deletes a character and leaves search when the
+search. tab cycles the sort (search with an empty query and sort by last
+modified lists the most recently changed resources across all folders).
+Backspace (DEL or ^H) deletes a character and leaves search when the
 query is empty; ctrl+w and alt+backspace delete a word.
 
 ### Detail
 
-Shows name, folder path, username, URI, description and the password masked
-as `********`.
+Shows name, folder path, username, URI, password masked as `********`,
+TOTP state, modified and created time, description. With the password
+shown (`p`) a supported TOTP shows the live code and the seconds left.
 
 | Key | Action |
 |---|---|
@@ -75,7 +87,9 @@ as `********`.
   `wl-copy`/`wl-paste`; X11 `xclip`, then `xsel`; otherwise OSC 52 escape
   sequence to the terminal (works over SSH in terminals that allow it).
 - Text is passed on stdin, never as a command argument.
-- Copied passwords and TOTP codes are cleared after 30 seconds, and on quit,
+- Copied passwords and TOTP codes are cleared after 30 seconds (a one-second
+  clock drives the countdown and the clear; copying again restarts the
+  30 s), and on quit,
   but only if the clipboard still holds the copied value (compared via
   SHA-256; with OSC 52 the clipboard cannot be read and is cleared
   unconditionally). Usernames and URIs are not cleared.
@@ -88,8 +102,10 @@ Creating, editing, sharing or deleting resources; opening URIs in a browser.
 
 - Model tests with a fake store and fake clipboard: folder navigation,
   parent, search filtering and path display, detail show/hide, copy
-  password/username, clipboard clear only when unchanged, stale clear timer
-  ignored, control characters stripped, TOTP code copied.
+  password/username, clipboard clear only when unchanged, copy again
+  restarts the timer, countdown text, control characters stripped, TOTP code
+  copied and shown live, sort modes, two-pane and narrow layouts never wider
+  than the terminal, Backspace as DEL and ^H.
 - Store tests: folder path building with a parent cycle guard.
 
 ## Security Note

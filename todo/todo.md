@@ -14,3 +14,4 @@
 - [x] `passbolt tui` (specs/tui.md) - 15 model/store tests pass (also with -race), not yet run against the real server
 - [ ] try `passbolt tui` against the real server: load time with many resources, v5 metadata, clipboard clear
 - [ ] tui: OSC 52 inside tmux needs `set -g allow-passthrough on` / `set-clipboard on`; document or detect
+- [x] tui: borders, two-pane layout, sort by name / last modified / last created (specs/tui.md)

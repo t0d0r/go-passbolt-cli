@@ -6,6 +6,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Folder is a Passbolt folder; ParentID is "" for the root.
@@ -23,6 +24,8 @@ type Entry struct {
 	Username    string
 	URI         string
 	Description string
+	Created     time.Time
+	Modified    time.Time
 }
 
 // Secret is the decrypted secret part of one resource.
@@ -172,4 +175,48 @@ func sanitize(s string) string {
 		}
 		return r
 	}, s)
+}
+
+type sortMode int
+
+const (
+	sortName sortMode = iota
+	sortModified
+	sortCreated
+)
+
+func (s sortMode) String() string {
+	switch s {
+	case sortModified:
+		return "last modified"
+	case sortCreated:
+		return "last created"
+	default:
+		return "name"
+	}
+}
+
+func (s sortMode) next() sortMode { return (s + 1) % 3 }
+
+// sortEntries returns a sorted copy; time modes put the newest first and
+// fall back to the name for equal times. sortName keeps the given order.
+func sortEntries(in []Entry, mode sortMode) []Entry {
+	out := append([]Entry(nil), in...)
+	if mode == sortName {
+		return out
+	}
+	key := func(e Entry) time.Time {
+		if mode == sortCreated {
+			return e.Created
+		}
+		return e.Modified
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, tj := key(out[i]), key(out[j])
+		if !ti.Equal(tj) {
+			return ti.After(tj)
+		}
+		return lessFold(out[i].Name, out[j].Name)
+	})
+	return out
 }
