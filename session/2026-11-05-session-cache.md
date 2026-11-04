@@ -26,6 +26,15 @@
   regression test `TestGetClient_SendsCachedMFACookie` fails on the old code
   and passes on the new.
 
+- `passbolt wizard` (specs/wizard.md, `internal/cmd/wizard.go`): server
+  address + reachability check, TLS, private key (keep or load from file,
+  validated, fingerprint shown), password storage, MFA mode/remember,
+  summary, optional login test, save with mode 0600. Existing settings are
+  defaults. Network, login and save are injected; 9 unit tests. The binary
+  was smoke-tested against the real server up to the key step (aborts
+  without saving on bad input).
+- `passbolt list folder` works on macOS with `passwordStore = keyring`.
+
 ## Decisions
 
 - Library `go-passbolt` stays unmodified; the cached MFA cookie is injected
@@ -54,6 +63,7 @@
 - internal/util/client.go, internal/cmd/root.go
 - internal/util/passwordstore.go, internal/util/passwordstore_test.go
 - internal/cmd/lock.go, go.mod, go.sum
+- internal/cmd/wizard.go, internal/cmd/wizard_test.go, specs/wizard.md
 
 ## How to run / verify
 
@@ -65,8 +75,8 @@ make build-linux    # bin/passbolt-linux-amd64 + sha256
 
 ## Next step
 
-Try `make build` on macOS against the real server with
-`passwordstore = 'keyring'` in the config (todo items 3 and 7).
+Run `passbolt wizard` end to end on a fresh config; then decide the
+password store for headless Linux hosts (specs/auth-cache.md).
 
 ## Security Note
 
