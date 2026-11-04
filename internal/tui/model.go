@@ -271,7 +271,7 @@ func (m *Model) keyBrowse(msg tea.KeyMsg) tea.Cmd {
 		default:
 			m.openDetail(*r.entry)
 		}
-	case "backspace", "h", "left":
+	case "backspace", "ctrl+h", "h", "left":
 		if m.cwd == "" {
 			return nil
 		}
@@ -324,11 +324,23 @@ func (m *Model) keySearch(msg tea.KeyMsg) tea.Cmd {
 		m.move(-m.pageSize())
 	case "pgdown":
 		m.move(m.pageSize())
-	case "backspace":
-		if r := []rune(m.query); len(r) > 0 {
-			m.query = string(r[:len(r)-1])
+	case "backspace", "ctrl+h": // terminals send DEL or ^H for Backspace
+		r := []rune(m.query)
+		if len(r) == 0 {
+			m.mode = modeBrowse
 			m.cursor, m.offset = 0, 0
+			return nil
 		}
+		m.query = string(r[:len(r)-1])
+		m.cursor, m.offset = 0, 0
+	case "alt+backspace", "ctrl+w":
+		q := strings.TrimRight(m.query, " ")
+		if i := strings.LastIndex(q, " "); i >= 0 {
+			m.query = q[:i+1]
+		} else {
+			m.query = ""
+		}
+		m.cursor, m.offset = 0, 0
 	default:
 		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
 			m.query += sanitize(string(msg.Runes))
@@ -344,7 +356,7 @@ func (m *Model) keySearch(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) keyDetail(msg tea.KeyMsg) tea.Cmd {
 	e := m.detail
 	switch msg.String() {
-	case "esc", "backspace", "h", "left", "q":
+	case "esc", "backspace", "ctrl+h", "h", "left", "q":
 		m.mode = m.prevMode
 		m.detail, m.secret, m.showPassword = nil, nil, false
 		m.status = ""

@@ -78,6 +78,12 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyDown}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "ctrl+h": // what terminals sending ^H for Backspace produce
+		return tea.KeyMsg{Type: tea.KeyCtrlH}
+	case "ctrl+w":
+		return tea.KeyMsg{Type: tea.KeyCtrlW}
+	case "alt+backspace":
+		return tea.KeyMsg{Type: tea.KeyBackspace, Alt: true}
 	case " ":
 		return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")}
 	}
@@ -424,5 +430,62 @@ func TestSecretFromFields(t *testing.T) {
 	s = secretFromFields(map[string]any{"password": "pw"})
 	if s.TOTPKey != "" {
 		t.Error("TOTP key from nothing")
+	}
+}
+
+func TestBackspaceVariants(t *testing.T) {
+	for _, bs := range []string{"backspace", "ctrl+h"} {
+		t.Run(bs, func(t *testing.T) {
+			if got := key(bs).String(); got != bs {
+				t.Fatalf("key(%q).String() = %q", bs, got)
+			}
+			m := newLoaded(t, testData(), &fakeClip{})
+
+			// browse: parent folder
+			press(m, "enter", "enter")
+			press(m, bs)
+			if m.cwd != "A" {
+				t.Errorf("browse: cwd = %q, want A", m.cwd)
+			}
+
+			// search: delete a character, then leave search on empty query
+			press(m, "/")
+			typeText(m, "ab")
+			press(m, bs)
+			if m.query != "a" {
+				t.Errorf("search: query = %q, want a", m.query)
+			}
+			press(m, bs)
+			if m.query != "" || m.mode != modeSearch {
+				t.Errorf("search: query=%q mode=%v, want empty query still in search", m.query, m.mode)
+			}
+			press(m, bs)
+			if m.mode != modeBrowse {
+				t.Errorf("search: %s on empty query should leave search", bs)
+			}
+
+			// detail: back
+			openDetail(t, m, "root mail")
+			press(m, bs)
+			if m.mode != modeSearch {
+				t.Errorf("detail: %s should go back", bs)
+			}
+		})
+	}
+}
+
+func TestSearchDeleteWord(t *testing.T) {
+	for _, k := range []string{"ctrl+w", "alt+backspace"} {
+		m := newLoaded(t, testData(), &fakeClip{})
+		press(m, "/")
+		typeText(m, "alpha site")
+		press(m, k)
+		if m.query != "alpha " {
+			t.Errorf("%s: query = %q, want %q", k, m.query, "alpha ")
+		}
+		press(m, k)
+		if m.query != "" {
+			t.Errorf("%s: query = %q, want empty", k, m.query)
+		}
 	}
 }

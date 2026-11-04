@@ -41,7 +41,7 @@ each sorted by name. Columns: name, username, URI.
 |---|---|
 | up/down, k/j, pgup/pgdown, g/G | move |
 | enter, l, right | open folder / open resource detail |
-| backspace, h, left | parent folder |
+| backspace (DEL or ^H), h, left | parent folder |
 | / | search |
 | c / u | copy password / username of the selected resource |
 | r | reload |
@@ -52,7 +52,8 @@ each sorted by name. Columns: name, username, URI.
 Typing filters all resources (every folder) by case-insensitive substring;
 each space-separated term must match name, username, URI or folder path.
 Rows show the folder path. up/down move, enter opens the detail, esc leaves
-search, backspace edits the query.
+search. Backspace (DEL or ^H) deletes a character and leaves search when the
+query is empty; ctrl+w and alt+backspace delete a word.
 
 ### Detail
 
@@ -66,7 +67,7 @@ as `********`.
 | u | copy username |
 | l | copy URI |
 | t | copy the current TOTP code (SHA1, 6 digits, 30 s only) |
-| esc, backspace, h, left, q | back |
+| esc, backspace (DEL or ^H), h, left, q | back |
 
 ## Clipboard
 

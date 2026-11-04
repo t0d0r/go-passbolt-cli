@@ -43,6 +43,10 @@
   passwords/TOTP cleared after 30 s and on quit only if unchanged; server
   text stripped of control and bidi characters. 15 tests, `-race` clean.
   Not yet run against the real server.
+- tui: Backspace did nothing in terminals that send ^H (bubbletea reports
+  it as ctrl+h, only DEL as backspace). ctrl+h is now handled like
+  backspace in every mode; backspace on an empty search query leaves search;
+  ctrl+w / alt+backspace delete a word.
 
 ## Decisions
 
