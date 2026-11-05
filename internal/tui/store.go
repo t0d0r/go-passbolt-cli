@@ -60,7 +60,7 @@ func (s *PassboltStore) Load(ctx context.Context) ([]Folder, []Entry, error) {
 		if err != nil {
 			return fmt.Errorf("listing folders: %w", err)
 		}
-		resources, err = s.client.GetResources(ctx, &api.GetResourcesOptions{ContainPermissions: true})
+		resources, err = s.client.GetResources(ctx, &api.GetResourcesOptions{ContainPermissions: true, ContainFavorites: true})
 		if err != nil {
 			return fmt.Errorf("listing resources: %w", err)
 		}
@@ -135,6 +135,9 @@ func (s *PassboltStore) decryptMeta(ctx context.Context, r api.Resource) (Entry,
 	}
 	if r.Permission != nil {
 		e.MyAccess = r.Permission.Type
+	}
+	if r.Favorite != nil {
+		e.FavoriteID = r.Favorite.ID
 	}
 	if !strings.HasPrefix(rType.Slug, "v5-") {
 		e.Name, e.Username, e.URI, e.Description = r.Name, r.Username, r.URI, r.Description
@@ -276,4 +279,25 @@ func sharesFromPermissions(perms []api.Permission, users map[string]api.User, gr
 	}
 	sortShares(shares)
 	return shares
+}
+
+// SetFavorite adds or removes the user's favorite mark on a resource.
+func (s *PassboltStore) SetFavorite(ctx context.Context, resourceID, favoriteID string, add bool) (string, error) {
+	var id string
+	err := s.retry(ctx, func() error {
+		if !add {
+			if err := s.client.DeleteFavorite(ctx, favoriteID); err != nil {
+				return fmt.Errorf("removing favorite: %w", err)
+			}
+			id = ""
+			return nil
+		}
+		fav, err := s.client.CreateFavorite(ctx, resourceID)
+		if err != nil {
+			return fmt.Errorf("adding favorite: %w", err)
+		}
+		id = fav.ID
+		return nil
+	})
+	return id, err
 }

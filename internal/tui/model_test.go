@@ -14,13 +14,26 @@ import (
 )
 
 type fakeStore struct {
-	folders []Folder
-	entries []Entry
-	secrets map[string]Secret
-	loadErr error
-	calls   int
-	perms   map[string][]Share
-	permErr error
+	folders  []Folder
+	entries  []Entry
+	secrets  map[string]Secret
+	loadErr  error
+	calls    int
+	perms    map[string][]Share
+	permErr  error
+	favCalls []string
+	favErr   error
+}
+
+func (f *fakeStore) SetFavorite(_ context.Context, id, favID string, add bool) (string, error) {
+	f.favCalls = append(f.favCalls, fmt.Sprintf("%s:%s:%v", id, favID, add))
+	if f.favErr != nil {
+		return "", f.favErr
+	}
+	if add {
+		return "fav-" + id, nil
+	}
+	return "", nil
 }
 
 func (f *fakeStore) Permissions(_ context.Context, id string) ([]Share, error) {
@@ -846,5 +859,126 @@ func TestFrameNeverOverflows(t *testing.T) {
 			check("detail")
 			press(m, "esc", "esc")
 		}
+	}
+}
+
+func favData() *fakeStore {
+	store := testData()
+	store.entries[2].FavoriteID = "fav-e3" // Beta DB in /Alpha/Beta
+	return store
+}
+
+func TestFavoritesFolderRowAndView(t *testing.T) {
+	m := newLoaded(t, favData(), &fakeClip{})
+	if r, _ := m.selected(); !r.favs {
+		t.Fatal("first root row is not Favorites/")
+	}
+	if v := m.View(); !strings.Contains(v, "Favorites/") || !strings.Contains(v, "1 item") {
+		t.Error("Favorites/ row or its count not shown")
+	}
+	press(m, "enter")
+	if !m.favOnly || selectedName(m) != "Beta DB" || len(m.rows()) != 1 {
+		t.Fatalf("favorites view: favOnly=%v selected=%q rows=%d", m.favOnly, selectedName(m), len(m.rows()))
+	}
+	if v := m.View(); !strings.Contains(v, "Favorites") || !strings.Contains(v, "/Alpha/Beta") {
+		t.Error("favorites view lacks its title or the folder path")
+	}
+	press(m, "enter")
+	if m.mode != modeDetail || !strings.Contains(m.View(), "Favorite   yes") {
+		t.Error("detail does not show Favorite yes")
+	}
+	press(m, "esc")
+	if !m.favOnly {
+		t.Error("back from detail left the favorites view")
+	}
+	press(m, "h")
+	if m.favOnly || m.cursor != 0 {
+		t.Error("h did not return to the root with the cursor on Favorites/")
+	}
+	press(m, "F")
+	if !m.favOnly {
+		t.Error("F did not open the favorites view")
+	}
+	press(m, "F")
+	if m.favOnly {
+		t.Error("F did not close the favorites view")
+	}
+}
+
+func TestToggleFavorite(t *testing.T) {
+	store := testData()
+	m := newLoaded(t, store, &fakeClip{})
+	if r, _ := m.selected(); r.favs {
+		t.Fatal("Favorites/ shown without favorites")
+	}
+	for selectedName(m) != "Root Mail" {
+		press(m, "j")
+	}
+	step(t, m, press(m, "f"))
+	if len(store.favCalls) != 1 || store.favCalls[0] != "e1::true" {
+		t.Fatalf("SetFavorite calls = %v", store.favCalls)
+	}
+	if !strings.Contains(m.status, "Added") {
+		t.Errorf("status = %q", m.status)
+	}
+	if favs := m.t.favorites(); len(favs) != 1 || favs[0].FavoriteID != "fav-e1" {
+		t.Fatalf("favorites after add = %+v", favs)
+	}
+	if selectedName(m) != "Root Mail" {
+		t.Errorf("cursor moved to %q when Favorites/ appeared", selectedName(m))
+	}
+	if !strings.Contains(m.View(), ">*") {
+		t.Error("favorite mark not shown on the selected row")
+	}
+
+	// remove from the favorites view: the list shrinks to empty
+	press(m, "F")
+	step(t, m, press(m, "f"))
+	if store.favCalls[1] != "e1:fav-e1:false" {
+		t.Errorf("remove call = %q", store.favCalls[1])
+	}
+	if len(m.rows()) != 0 || !strings.Contains(m.View(), "No favorites yet") {
+		t.Error("favorites view not empty after removing the last favorite")
+	}
+}
+
+func TestToggleFavoriteInDetailAndError(t *testing.T) {
+	store := testData()
+	m := newLoaded(t, store, &fakeClip{})
+	openDetail(t, m, "root mail")
+	step(t, m, press(m, "f"))
+	if m.detail.FavoriteID != "fav-e1" || !strings.Contains(m.View(), "Favorite   yes") {
+		t.Error("detail not updated after adding the favorite")
+	}
+
+	store.favErr = errors.New("forbidden")
+	step(t, m, press(m, "f"))
+	if m.detail.FavoriteID != "fav-e1" || m.statusKind != statusError {
+		t.Error("failed removal changed the state or showed no error")
+	}
+}
+
+func TestFavoritesPreviews(t *testing.T) {
+	m := newLoaded(t, favData(), &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	if !strings.Contains(m.View(), "marked as favorite") {
+		t.Error("top preview of Favorites/ missing")
+	}
+	press(m, "v") // right preview: must not crash on the pseudo-folder
+	if !strings.Contains(m.View(), "Favorites") {
+		t.Error("right preview of Favorites/ missing")
+	}
+}
+
+func TestReloadKeepsSelection(t *testing.T) {
+	store := testData()
+	m := newLoaded(t, store, &fakeClip{})
+	for selectedName(m) != "Root Mail" {
+		press(m, "j")
+	}
+	store.entries = append(store.entries, Entry{ID: "new", Name: "AAA first"}) // sorts above Root Mail
+	step(t, m, press(m, "r"))
+	if selectedName(m) != "Root Mail" {
+		t.Errorf("after reload the cursor is on %q", selectedName(m))
 	}
 }

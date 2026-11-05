@@ -27,6 +27,8 @@ type Entry struct {
 	Description string
 	Created     time.Time
 	Modified    time.Time
+	// FavoriteID is the id of the user's favorite mark, "" if not a favorite.
+	FavoriteID string
 	// MyAccess is the current user's permission type (see accessName), 0 if
 	// unknown.
 	MyAccess int
@@ -76,6 +78,9 @@ type Store interface {
 	Secret(ctx context.Context, resourceID string) (Secret, error)
 	// Permissions lists who has access to a resource, owners first.
 	Permissions(ctx context.Context, resourceID string) ([]Share, error)
+	// SetFavorite marks (add) or unmarks a resource; favoriteID is the
+	// current mark when removing. It returns the new mark id ("" if removed).
+	SetFavorite(ctx context.Context, resourceID, favoriteID string, add bool) (string, error)
 }
 
 // sortShares orders by permission (owner first), users before groups, then
@@ -172,6 +177,34 @@ func (t *tree) path(id string) string {
 	p := "/" + strings.Join(parts, "/")
 	t.paths[id] = p
 	return p
+}
+
+// favorites returns the favorite entries of every folder, by name.
+func (t *tree) favorites() []Entry {
+	var out []Entry
+	for _, e := range t.all {
+		if e.FavoriteID != "" {
+			out = append(out, e)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return lessFold(out[i].Name, out[j].Name) })
+	return out
+}
+
+// setFavorite updates the favorite mark of one entry everywhere.
+func (t *tree) setFavorite(id, favoriteID string) {
+	for k := range t.entries {
+		for i := range t.entries[k] {
+			if t.entries[k][i].ID == id {
+				t.entries[k][i].FavoriteID = favoriteID
+			}
+		}
+	}
+	for i := range t.all {
+		if t.all[i].ID == id {
+			t.all[i].FavoriteID = favoriteID
+		}
+	}
 }
 
 func (t *tree) parent(id string) string {

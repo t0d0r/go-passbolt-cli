@@ -71,6 +71,11 @@
   columns. Default is now a 6-line preview strip on top with the list below
   at full width (`v` cycles top / right / off); modified date shown as a
   column when there is room.
+- tui favorites: `*` mark, `Favorites/` pseudo-folder at the root, `F`
+  favorites view, `f` toggles on the server (`SetFavorite` in the store).
+  Bug found by the tests and fixed: adding the first favorite inserted the
+  `Favorites/` row and moved the cursor to the neighbouring resource; the
+  cursor now follows the resource id after favorite changes and reloads.
 
 ## Decisions
 

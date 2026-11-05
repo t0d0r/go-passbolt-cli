@@ -68,6 +68,7 @@ cut below 12 columns.
 | backspace (DEL or ^H), h, left | parent folder |
 | / | search |
 | v | cycle the preview: top, right, off |
+| f / F | add or remove favorite / favorites view |
 | s, tab | cycle sort: name, last modified, last created (newest first; folders stay first, by name) |
 | c / u | copy password / username of the selected resource |
 | r | reload |
@@ -96,6 +97,22 @@ query is empty; ctrl+w and alt+backspace delete a word.
   (`GetUsers`, `GetGroups`); unknown ids are shown as "unknown user <id>".
 - A result for a resource that is no longer open is ignored.
 
+### Favorites
+
+- The list load asks for the user's favorite marks (`contain[favorite]`).
+  Favorite resources have a `*` in the row gutter (next to the cursor mark).
+- At the root a `Favorites/` pseudo-folder (with the count) is the first
+  row while at least one favorite exists; enter opens a view of the
+  favorites of every folder (by name, with a folder path column). `F`
+  toggles that view from anywhere in browse mode; h / backspace leaves it.
+- `f` (browse and detail) adds or removes the selected resource on the
+  server (`POST /favorites/resource/<id>`, `DELETE /favorites/<id>`), so the
+  mark is shared with the web extension. The UI changes only after the
+  server confirmed; errors are shown in the status line.
+- After a favorite change or a reload the cursor stays on the same resource
+  (rows can appear above it, e.g. `Favorites/`).
+- Preview and detail show "Favorite yes/no".
+
 ### Detail
 
 Shows name, folder path, username, URI, password masked as `********`,
@@ -109,6 +126,7 @@ shown (`p`) a supported TOTP shows the live code and the seconds left.
 | u | copy username |
 | l | copy URI |
 | t | copy the current TOTP code (SHA1, 6 digits, 30 s only) |
+| f | add or remove favorite |
 | esc, backspace (DEL or ^H), h, left, q | back |
 
 ## Terminal safety
@@ -140,7 +158,8 @@ shown (`p`) a supported TOTP shows the live code and the seconds left.
 
 ## Non-goals (for now)
 
-Creating, editing, sharing or deleting resources; opening URIs in a browser.
+Creating, editing, sharing or deleting resources (favorite marks are the
+only write); opening URIs in a browser.
 
 ## Acceptance
 

@@ -216,6 +216,9 @@ func (m *Model) viewList(w int) string {
 	rows := m.rows()
 
 	title := m.t.path(m.cwd)
+	if m.favOnly {
+		title = "Favorites"
+	}
 	if m.mode == modeSearch {
 		title = "Search: " + m.query + "_"
 	}
@@ -232,6 +235,8 @@ func (m *Model) viewList(w int) string {
 		lines = []string{"", styleErr.Render("  Could not load data."), styleMuted.Render("  Press r to retry, q to quit.")}
 	case len(rows) == 0 && m.mode == modeSearch:
 		lines = []string{"", styleMuted.Render("  No match")}
+	case len(rows) == 0 && m.favOnly:
+		lines = []string{"", styleMuted.Render("  No favorites yet. Press f on a resource to add it.")}
 	case len(rows) == 0:
 		lines = []string{"", styleMuted.Render("  (empty folder)")}
 	default:
@@ -255,7 +260,7 @@ func (m *Model) entryTime(e *Entry) time.Time {
 }
 
 func (m *Model) entryExtra(e *Entry) string {
-	if m.mode == modeSearch {
+	if m.mode == modeSearch || m.favOnly {
 		return m.t.path(e.FolderID)
 	}
 	return sanitize(e.URI)
@@ -295,6 +300,11 @@ func distribute(space, name, user, extra int) (int, int, int) {
 func (m *Model) layoutColumns(rows []row, avail int) columns {
 	maxName, maxUser, maxExtra := len("Name"), len("Username"), 0
 	for _, r := range rows {
+		if r.favs {
+			maxName = max(maxName, len("Favorites/"))
+			maxUser = max(maxUser, ansi.StringWidth(m.favCount()))
+			continue
+		}
 		if r.folder != nil {
 			maxName = max(maxName, ansi.StringWidth(sanitize(r.folder.Name))+1)
 			maxUser = max(maxUser, ansi.StringWidth(folderCount(m.t, r.folder.ID)))
@@ -349,6 +359,28 @@ func (c columns) join(name, user, date, extra string) string {
 	return strings.Join(parts, strings.Repeat(" ", colGap))
 }
 
+// gutter is the cursor mark and the favorite mark before each row.
+const gutterWidth = 3
+
+func gutter(selected, favorite bool) string {
+	g := []byte("   ")
+	if selected {
+		g[0] = '>'
+	}
+	if favorite {
+		g[1] = '*'
+	}
+	return string(g)
+}
+
+func (m *Model) favCount() string {
+	n := len(m.t.favorites())
+	if n == 1 {
+		return "1 item"
+	}
+	return fmt.Sprintf("%d items", n)
+}
+
 func (m *Model) listLines(rows []row, inner int) []string {
 	height := m.listRows()
 	if m.cursor < m.offset {
@@ -358,7 +390,7 @@ func (m *Model) listLines(rows []row, inner int) []string {
 		m.offset = m.cursor - height + 1
 	}
 
-	avail := inner - 2 // "> " marker
+	avail := inner - gutterWidth
 	c := m.layoutColumns(rows, avail)
 
 	dateTitle := "Modified"
@@ -366,41 +398,41 @@ func (m *Model) listLines(rows []row, inner int) []string {
 		dateTitle = "Created"
 	}
 	extraTitle := "URI"
-	if m.mode == modeSearch {
+	if m.mode == modeSearch || m.favOnly {
 		extraTitle = "Folder"
 	}
-	lines := []string{"  " + styleLabel.Render(c.join("Name", "Username", dateTitle, extraTitle))}
+	lines := []string{strings.Repeat(" ", gutterWidth) + styleLabel.Render(c.join("Name", "Username", dateTitle, extraTitle))}
+	gap := strings.Repeat(" ", colGap)
 
 	for i := m.offset; i < len(rows) && len(lines) <= height; i++ {
 		r := rows[i]
 		sel := i == m.cursor
-		marker := "  "
-		if sel {
-			marker = "> "
-		}
 
-		if r.folder != nil {
-			text := c.join(sanitize(r.folder.Name)+"/", folderCount(m.t, r.folder.ID), "", "")
+		if r.favs || r.folder != nil {
+			name, count := "Favorites/", m.favCount()
+			if r.folder != nil {
+				name, count = sanitize(r.folder.Name)+"/", folderCount(m.t, r.folder.ID)
+			}
+			g := gutter(sel, r.favs)
 			if sel {
-				lines = append(lines, styleSelected.Render(fit(marker+text, inner)))
+				lines = append(lines, styleSelected.Render(fit(g+c.join(name, count, "", ""), inner)))
 				continue
 			}
-			name := fit(sanitize(r.folder.Name)+"/", c.name)
-			lines = append(lines, marker+styleFolder.Render(name)+strings.Repeat(" ", colGap)+styleMuted.Render(folderCount(m.t, r.folder.ID)))
+			lines = append(lines, styleWarn.Render(g)+styleFolder.Render(fit(name, c.name))+gap+styleMuted.Render(count))
 			continue
 		}
 
 		e := r.entry
+		g := gutter(sel, e.FavoriteID != "")
 		date := ""
 		if c.date > 0 {
 			date = formatTime(m.entryTime(e))
 		}
 		if sel {
-			lines = append(lines, styleSelected.Render(fit(marker+c.join(sanitize(e.Name), sanitize(e.Username), date, m.entryExtra(e)), inner)))
+			lines = append(lines, styleSelected.Render(fit(g+c.join(sanitize(e.Name), sanitize(e.Username), date, m.entryExtra(e)), inner)))
 			continue
 		}
-		gap := strings.Repeat(" ", colGap)
-		line := marker + styleText.Render(fit(sanitize(e.Name), c.name)) + gap + styleMuted.Render(fit(sanitize(e.Username), c.user))
+		line := styleWarn.Render(g) + styleText.Render(fit(sanitize(e.Name), c.name)) + gap + styleMuted.Render(fit(sanitize(e.Username), c.user))
 		if c.date > 0 {
 			line += gap + styleMuted.Render(fit(date, c.date))
 		}
@@ -410,6 +442,13 @@ func (m *Model) listLines(rows []row, inner int) []string {
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 func field(label, value string) string {
@@ -436,6 +475,9 @@ func (m *Model) viewPreviewTop(w int) string {
 	switch {
 	case !ok:
 		return box("Preview", "v layout", []string{"", styleMuted.Render(" Nothing selected")}, w, topPreviewHeight, false)
+	case r.favs:
+		lines := []string{" " + field("Contains", m.favCount()+" marked as favorite, from every folder"), "", "", " " + styleMuted.Render("enter open | F favorites anywhere | f on a resource adds or removes it")}
+		return box("Favorites/", "v layout", lines, w, topPreviewHeight, false)
 	case r.folder != nil:
 		f := r.folder
 		lines := []string{
@@ -450,6 +492,9 @@ func (m *Model) viewPreviewTop(w int) string {
 	access := "-"
 	if e.MyAccess != 0 {
 		access = accessName(e.MyAccess)
+	}
+	if e.FavoriteID != "" {
+		access += " | favorite"
 	}
 	last := " " + styleMuted.Render("enter details | c copy password | u copy user | v layout")
 	if e.Description != "" {
@@ -473,6 +518,9 @@ func (m *Model) viewPreview(w int) string {
 	switch {
 	case !ok:
 		lines = []string{"", styleMuted.Render(" Nothing selected")}
+	case r.favs:
+		title = "Favorites"
+		lines = []string{"", " " + styleFolder.Render("Favorites/"), "", " " + field("Contains", m.favCount()), "", " " + styleMuted.Render("enter to open")}
 	case r.folder != nil:
 		title = "Folder"
 		folders, entries := len(m.t.children[r.folder.ID]), len(m.t.entries[r.folder.ID])
@@ -500,6 +548,7 @@ func (m *Model) viewPreview(w int) string {
 		if e.MyAccess != 0 {
 			lines = append(lines, " "+field("Your access", accessName(e.MyAccess)))
 		}
+		lines = append(lines, " "+field("Favorite", yesNo(e.FavoriteID != "")))
 		if e.Description != "" {
 			lines = append(lines, "", " "+styleLabel.Render("Description"))
 			for _, l := range wrap(sanitize(e.Description), inner-2) {
@@ -535,6 +584,7 @@ func (m *Model) viewDetail(w int) string {
 	lines = append(lines,
 		"  "+field("Modified", formatTime(e.Modified)),
 		"  "+field("Created", formatTime(e.Created)),
+		"  "+field("Favorite", yesNo(e.FavoriteID != "")+"  "+styleMuted.Render("(f to toggle)")),
 	)
 	if e.Description != "" {
 		lines = append(lines, "", "  "+styleLabel.Render("Description"))
@@ -638,14 +688,14 @@ func (m *Model) hintList() []hint {
 		return []hint{{"type", "filter"}, {"up/down", "move"}, {"enter", "open"}, {"tab", "sort"}, {"esc", "back"}}
 	case modeDetail:
 		if m.help {
-			return []hint{{"p", "show/hide password"}, {"c", "copy password"}, {"u", "copy username"}, {"l", "copy URI"}, {"t", "copy TOTP"}, {"esc", "back"}, {"ctrl+c", "quit"}}
+			return []hint{{"p", "show/hide password"}, {"c", "copy password"}, {"u", "copy username"}, {"l", "copy URI"}, {"t", "copy TOTP"}, {"f", "favorite"}, {"esc", "back"}, {"ctrl+c", "quit"}}
 		}
-		return []hint{{"p", "show"}, {"c", "password"}, {"u", "user"}, {"l", "uri"}, {"t", "totp"}, {"esc", "back"}, {"?", "help"}}
+		return []hint{{"p", "show"}, {"c", "password"}, {"u", "user"}, {"l", "uri"}, {"t", "totp"}, {"f", "fav"}, {"esc", "back"}, {"?", "help"}}
 	default:
 		if m.help {
-			return []hint{{"j/k", "move"}, {"enter", "open"}, {"h", "parent"}, {"/", "search"}, {"s", "sort"}, {"v", "preview " + m.preview.String()}, {"c", "copy password"}, {"u", "copy username"}, {"r", "reload"}, {"q", "quit"}}
+			return []hint{{"j/k", "move"}, {"enter", "open"}, {"h", "parent"}, {"/", "search"}, {"s", "sort"}, {"v", "preview " + m.preview.String()}, {"f", "favorite"}, {"F", "favorites"}, {"c", "copy password"}, {"u", "copy username"}, {"r", "reload"}, {"q", "quit"}}
 		}
-		return []hint{{"enter", "open"}, {"h", "back"}, {"/", "search"}, {"s", "sort"}, {"v", "layout"}, {"c", "password"}, {"u", "user"}, {"q", "quit"}, {"?", "help"}}
+		return []hint{{"enter", "open"}, {"h", "back"}, {"/", "search"}, {"s", "sort"}, {"f", "fav"}, {"F", "favs"}, {"c", "password"}, {"u", "user"}, {"q", "quit"}, {"?", "help"}}
 	}
 }
 

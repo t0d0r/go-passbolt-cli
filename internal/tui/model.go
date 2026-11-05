@@ -47,6 +47,13 @@ type secretMsg struct {
 	err    error
 }
 
+type favMsg struct {
+	id         string
+	favoriteID string
+	add        bool
+	err        error
+}
+
 type permsMsg struct {
 	id     string
 	shares []Share
@@ -59,6 +66,7 @@ type clockMsg struct{}
 type row struct {
 	folder *Folder
 	entry  *Entry
+	favs   bool // the "Favorites/" pseudo-folder at the root
 }
 
 // Model is the bubbletea model of the TUI.
@@ -87,6 +95,7 @@ type Model struct {
 	query    string
 	sort     sortMode
 	preview  previewMode
+	favOnly  bool // browsing the favorites of every folder
 
 	detail       *Entry
 	secret       *Secret
@@ -178,9 +187,20 @@ func (m *Model) rows() []row {
 		}
 		return out
 	default:
+		if m.favOnly {
+			favs := sortEntries(m.t.favorites(), m.sort)
+			out := make([]row, len(favs))
+			for i := range favs {
+				out[i] = row{entry: &favs[i]}
+			}
+			return out
+		}
 		folders := m.t.children[m.cwd]
 		entries := sortEntries(m.t.entries[m.cwd], m.sort)
-		out := make([]row, 0, len(folders)+len(entries))
+		out := make([]row, 0, len(folders)+len(entries)+1)
+		if m.cwd == "" && len(m.t.favorites()) > 0 {
+			out = append(out, row{favs: true})
+		}
 		for i := range folders {
 			out = append(out, row{folder: &folders[i]})
 		}
@@ -197,6 +217,20 @@ func (m *Model) selected() (row, bool) {
 		return row{}, false
 	}
 	return rows[m.cursor], true
+}
+
+// selectEntry puts the cursor on the row of resource id, or clamps it if
+// that row is gone.
+func (m *Model) selectEntry(id string) {
+	if id != "" {
+		for i, r := range m.rows() {
+			if r.entry != nil && r.entry.ID == id {
+				m.cursor = i
+				return
+			}
+		}
+	}
+	m.move(0)
 }
 
 func (m *Model) move(delta int) {
@@ -219,15 +253,41 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(statusError, "Error: %v", msg.err)
 			return m, nil
 		}
+		selID := ""
+		if r, ok := m.selected(); ok && r.entry != nil {
+			selID = r.entry.ID
+		}
 		m.t = newTree(msg.folders, msg.entries)
 		if _, ok := m.t.folders[m.cwd]; !ok {
 			m.cwd = ""
 		}
-		m.move(0)
+		m.selectEntry(selID) // a reload may add or remove rows above the cursor
 		m.setStatus(statusInfo, "Loaded %d folders, %d resources", len(msg.folders), len(msg.entries))
 		return m, nil
 	case secretMsg:
 		return m, m.onSecret(msg)
+	case favMsg:
+		if msg.err != nil {
+			m.setStatus(statusError, "Error: %v", msg.err)
+			return m, nil
+		}
+		// Adding the first favorite inserts the Favorites/ row at the root,
+		// so keep the cursor on the same resource, not on the same index.
+		selID := ""
+		if r, ok := m.selected(); ok && r.entry != nil {
+			selID = r.entry.ID
+		}
+		m.t.setFavorite(msg.id, msg.favoriteID)
+		if m.detail != nil && m.detail.ID == msg.id {
+			m.detail.FavoriteID = msg.favoriteID
+		}
+		m.selectEntry(selID)
+		if msg.add {
+			m.setStatus(statusOK, "Added to favorites")
+		} else {
+			m.setStatus(statusOK, "Removed from favorites")
+		}
+		return m, nil
 	case permsMsg:
 		if m.mode == modeDetail && m.detail != nil && m.detail.ID == msg.id {
 			m.shares, m.sharesErr, m.sharesBusy = msg.shares, msg.err, false
@@ -311,6 +371,9 @@ func (m *Model) keyBrowse(msg tea.KeyMsg) tea.Cmd {
 		r, ok := m.selected()
 		switch {
 		case !ok:
+		case r.favs:
+			m.favOnly = true
+			m.cursor, m.offset = 0, 0
 		case r.folder != nil:
 			m.cwd = r.folder.ID
 			m.cursor, m.offset = 0, 0
@@ -318,6 +381,11 @@ func (m *Model) keyBrowse(msg tea.KeyMsg) tea.Cmd {
 			return m.openDetail(*r.entry)
 		}
 	case isBackspace(k) || k == "h" || k == "left":
+		if m.favOnly {
+			m.favOnly = false
+			m.cursor, m.offset = 0, 0 // the Favorites/ row is the first row
+			return nil
+		}
 		if m.cwd == "" {
 			return nil
 		}
@@ -348,6 +416,13 @@ func (m *Model) keyBrowse(msg tea.KeyMsg) tea.Cmd {
 		return m.loadCmd()
 	case k == "s" || k == "tab":
 		m.cycleSort()
+	case k == "f":
+		if r, ok := m.selected(); ok && r.entry != nil {
+			return m.toggleFavorite(r.entry)
+		}
+	case k == "F":
+		m.favOnly = !m.favOnly
+		m.cursor, m.offset = 0, 0
 	case k == "v":
 		m.preview = (m.preview + 1) % 3
 		m.offset = 0
@@ -441,6 +516,8 @@ func (m *Model) keyDetail(msg tea.KeyMsg) tea.Cmd {
 			return m.copyTOTP(*m.secret)
 		}
 		return m.secretCmd(e.ID, actionTOTP)
+	case k == "f":
+		return m.toggleFavorite(e)
 	case k == "u":
 		m.copyPlain(e.Username, "Username")
 	case k == "l":
@@ -466,6 +543,19 @@ func (m *Model) openDetail(e Entry) tea.Cmd {
 		defer cancel()
 		shares, err := store.Permissions(ctx, id)
 		return permsMsg{id: id, shares: shares, err: err}
+	}
+}
+
+// toggleFavorite adds or removes e from the favorites on the server.
+func (m *Model) toggleFavorite(e *Entry) tea.Cmd {
+	store, timeout := m.store, m.timeout
+	id, favID, add := e.ID, e.FavoriteID, e.FavoriteID == ""
+	m.setStatus(statusInfo, "Updating favorites...")
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		newID, err := store.SetFavorite(ctx, id, favID, add)
+		return favMsg{id: id, favoriteID: newID, add: add, err: err}
 	}
 }
 
