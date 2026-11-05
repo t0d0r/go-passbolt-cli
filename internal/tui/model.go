@@ -47,6 +47,12 @@ type secretMsg struct {
 	err    error
 }
 
+type permsMsg struct {
+	id     string
+	shares []Share
+	err    error
+}
+
 // clockMsg drives the clipboard countdown, the clear and the live TOTP code.
 type clockMsg struct{}
 
@@ -84,6 +90,9 @@ type Model struct {
 	detail       *Entry
 	secret       *Secret
 	showPassword bool
+	shares       []Share
+	sharesErr    error
+	sharesBusy   bool
 
 	status     string
 	statusKind statusKind
@@ -218,6 +227,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case secretMsg:
 		return m, m.onSecret(msg)
+	case permsMsg:
+		if m.mode == modeDetail && m.detail != nil && m.detail.ID == msg.id {
+			m.shares, m.sharesErr, m.sharesBusy = msg.shares, msg.err, false
+		}
+		return m, nil
 	case clockMsg:
 		m.ticking = false
 		if m.clipArmed && !m.now().Before(m.clipExpires) {
@@ -300,7 +314,7 @@ func (m *Model) keyBrowse(msg tea.KeyMsg) tea.Cmd {
 			m.cwd = r.folder.ID
 			m.cursor, m.offset = 0, 0
 		default:
-			m.openDetail(*r.entry)
+			return m.openDetail(*r.entry)
 		}
 	case isBackspace(k) || k == "h" || k == "left":
 		if m.cwd == "" {
@@ -354,7 +368,7 @@ func (m *Model) keySearch(msg tea.KeyMsg) tea.Cmd {
 		m.cursor, m.offset = 0, 0
 	case k == "enter":
 		if r, ok := m.selected(); ok && r.entry != nil {
-			m.openDetail(*r.entry)
+			return m.openDetail(*r.entry)
 		}
 	case k == "up" || k == "ctrl+p":
 		m.move(-1)
@@ -401,6 +415,7 @@ func (m *Model) keyDetail(msg tea.KeyMsg) tea.Cmd {
 	case k == "esc" || isBackspace(k) || k == "h" || k == "left" || k == "q":
 		m.mode = m.prevMode
 		m.detail, m.secret, m.showPassword = nil, nil, false
+		m.shares, m.sharesErr, m.sharesBusy = nil, nil, false
 		m.status = ""
 	case k == "p":
 		switch {
@@ -431,12 +446,22 @@ func (m *Model) keyDetail(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) openDetail(e Entry) {
+// openDetail shows e and starts loading who has access to it (not secret,
+// so it is fetched right away).
+func (m *Model) openDetail(e Entry) tea.Cmd {
 	m.prevMode = m.mode
 	m.mode = modeDetail
 	m.detail = &e
 	m.secret, m.showPassword = nil, false
+	m.shares, m.sharesErr, m.sharesBusy = nil, nil, true
 	m.status = ""
+	store, timeout, id := m.store, m.timeout, e.ID
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		shares, err := store.Permissions(ctx, id)
+		return permsMsg{id: id, shares: shares, err: err}
+	}
 }
 
 // copySecret copies text and arms the clear after ClearAfter.

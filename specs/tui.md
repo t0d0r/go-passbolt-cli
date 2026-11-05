@@ -71,6 +71,19 @@ modified lists the most recently changed resources across all folders).
 Backspace (DEL or ^H) deletes a character and leaves search when the
 query is empty; ctrl+w and alt+backspace delete a word.
 
+### Access (who a resource is shared with)
+
+- The list load asks for the current user's permission
+  (`contain[permission]`); the preview shows it as "Your access".
+- Opening the detail view loads `GET /permissions/resource/<id>` (not a
+  secret, so no key press is needed) and shows: your access, "Shared: no
+  (only you)" when there is a single permission, otherwise the number of
+  users and groups and one line per permission - level (owner, can update,
+  can read), user or group, full name and email. Owners first, then users
+  before groups, then by name. Users and groups are looked up once per load
+  (`GetUsers`, `GetGroups`); unknown ids are shown as "unknown user <id>".
+- A result for a resource that is no longer open is ignored.
+
 ### Detail
 
 Shows name, folder path, username, URI, password masked as `********`,
@@ -85,6 +98,20 @@ shown (`p`) a supported TOTP shows the live code and the seconds left.
 | l | copy URI |
 | t | copy the current TOTP code (SHA1, 6 digits, 30 s only) |
 | esc, backspace (DEL or ^H), h, left, q | back |
+
+## Terminal safety
+
+- `sanitize` removes Unicode control (Cc) and format (Cf) characters -
+  escape sequences, zero-width characters, joiners, soft hyphen, BOM, bidi
+  controls - and turns tabs, newlines, NEL and line/paragraph separators into
+  spaces.
+- The frame leaves the last terminal column empty and is clipped to the
+  terminal height, so a character the terminal draws wider than computed
+  cannot wrap a line, scroll the screen and duplicate borders.
+- The MFA challenge of the first API call is triggered before the UI starts
+  (`GetMe`), so a TOTP prompt never appears inside the UI. Inside the UI the
+  MFA callback returns an error ("restart passbolt tui") instead of
+  prompting.
 
 ## Clipboard
 

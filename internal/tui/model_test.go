@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,12 @@ type fakeStore struct {
 	secrets map[string]Secret
 	loadErr error
 	calls   int
+	perms   map[string][]Share
+	permErr error
+}
+
+func (f *fakeStore) Permissions(_ context.Context, id string) ([]Share, error) {
+	return f.perms[id], f.permErr
 }
 
 func (f *fakeStore) Load(context.Context) ([]Folder, []Entry, error) {
@@ -52,12 +59,20 @@ func testData() *fakeStore {
 			{ID: "B", ParentID: "A", Name: "Beta"},
 		},
 		entries: []Entry{
-			{ID: "e1", Name: "Root Mail", Username: "root@example.com", URI: "https://mail.example.com",
+			{ID: "e1", Name: "Root Mail", Username: "root@example.com", URI: "https://mail.example.com", MyAccess: accessOwner,
 				Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Modified: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
 			{ID: "e2", FolderID: "A", Name: "Alpha Site", Username: "alpha"},
 			{ID: "e3", FolderID: "B", Name: "Beta DB", Username: "dbadmin", Description: "primary"},
 			{ID: "e4", Name: "\x1b[31mEvil\x07", Username: "x",
 				Created: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), Modified: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)},
+		},
+		perms: map[string][]Share{
+			"e1": {
+				{Name: "Ana Petrova", Detail: "ana@example.com", Type: accessOwner},
+				{Group: true, Name: "Ops", Type: accessUpdate},
+				{Name: "Ivan", Detail: "ivan@example.com", Type: accessRead},
+			},
+			"e3": {{Name: "Me", Type: accessOwner}},
 		},
 		secrets: map[string]Secret{
 			"e1": {Password: "s3cret-root"},
@@ -650,6 +665,144 @@ func TestDistribute(t *testing.T) {
 		}
 		if n+u+x > c.space {
 			t.Errorf("distribute(%d, ...) overflows: %d", c.space, n+u+x)
+		}
+	}
+}
+
+func TestDetailShowsAccess(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	press(m, "/")
+	typeText(m, "root mail")
+	cmd := press(m, "enter")
+	if !strings.Contains(m.View(), "loading...") {
+		t.Error("access not shown as loading")
+	}
+	step(t, m, cmd)
+	v := m.View()
+	for _, want := range []string{"with 2 users, 1 groups", "Ana Petrova", "<ana@example.com>", "can update", "Ops", "can read", "You", "owner"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("detail lacks %q", want)
+		}
+	}
+	if strings.Index(v, "Ana Petrova") > strings.Index(v, "Ivan") {
+		t.Error("owner not listed first")
+	}
+}
+
+func TestDetailNotShared(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	press(m, "/")
+	typeText(m, "beta db")
+	step(t, m, press(m, "enter"))
+	if !strings.Contains(m.View(), "no (only you)") {
+		t.Error("single permission not shown as not shared")
+	}
+}
+
+func TestAccessErrorAndStaleResult(t *testing.T) {
+	store := testData()
+	store.permErr = errors.New("forbidden")
+	m := newLoaded(t, store, &fakeClip{})
+	press(m, "/")
+	typeText(m, "root mail")
+	stale := press(m, "enter")
+	press(m, "esc") // back to search
+	typeText(m, "") // still "root mail"
+	press(m, "backspace", "backspace", "backspace", "backspace", "backspace", "backspace", "backspace", "backspace", "backspace")
+	typeText(m, "beta db")
+	fresh := press(m, "enter") // detail of e3
+	step(t, m, stale)          // result for e1 arrives late
+	if m.detail.ID != "e3" || m.sharesErr != nil || !m.sharesBusy {
+		t.Fatal("late result for another resource was applied")
+	}
+	step(t, m, fresh)
+	if !strings.Contains(m.View(), "could not load: forbidden") {
+		t.Error("permission error not shown")
+	}
+}
+
+func TestPreviewShowsMyAccess(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	for selectedName(m) != "Root Mail" {
+		press(m, "j")
+	}
+	if !strings.Contains(m.View(), "Your access") {
+		t.Error("preview lacks Your access")
+	}
+}
+
+func TestManySharesAreCutWithNote(t *testing.T) {
+	store := testData()
+	for i := range 40 {
+		store.perms["e1"] = append(store.perms["e1"], Share{Name: fmt.Sprintf("user%02d", i), Type: accessRead})
+	}
+	m := newLoaded(t, store, &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	press(m, "/")
+	typeText(m, "root mail")
+	step(t, m, press(m, "enter"))
+	v := m.View()
+	if !strings.Contains(v, "more lines") {
+		t.Error("no note about cut lines")
+	}
+	if n := len(strings.Split(v, "\n")); n > 24 {
+		t.Errorf("view has %d lines, terminal has 24", n)
+	}
+}
+
+// TestFrameNeverOverflows renders awkward data in every mode at several sizes:
+// the frame must fit the terminal height and keep the last column free, or a
+// wrapped line scrolls the screen and duplicates borders.
+func TestFrameNeverOverflows(t *testing.T) {
+	store := testData()
+	weird := []string{
+		"line\u2028separator", "zero\u200bwidth\u200djoiner", "soft\u00adhyphen\ufeffbom",
+		"emoji 🔐🧑\u200d💻 keys", "Български институт за стандартизация(ISO/IEC 27001)",
+		strings.Repeat("very-long-name-", 30), "tab\there\r\nnewline\u0085nel",
+	}
+	for i, w := range weird {
+		store.entries = append(store.entries, Entry{
+			ID: fmt.Sprint("w", i), Name: w, Username: w, URI: "https://" + w,
+			Description: strings.Repeat(w+" ", 20) + "\n\n\nmore\nlines",
+		})
+		store.perms[fmt.Sprint("w", i)] = []Share{{Name: w, Detail: w, Type: accessOwner}, {Group: true, Name: w, Type: accessRead}}
+	}
+	for _, size := range [][2]int{{230, 40}, {140, 30}, {100, 20}, {80, 24}, {50, 10}} {
+		m := newLoaded(t, store, &fakeClip{})
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		check := func(state string) {
+			t.Helper()
+			lines := strings.Split(m.View(), "\n")
+			if len(lines) > size[1] {
+				t.Errorf("%dx%d %s: %d lines", size[0], size[1], state, len(lines))
+			}
+			for i, l := range lines {
+				if w := ansi.StringWidth(l); w >= size[0] {
+					t.Errorf("%dx%d %s: line %d is %d wide", size[0], size[1], state, i, w)
+				}
+				if strings.ContainsAny(l, "\u2028\u2029\u200b\u200d\u00ad\ufeff\t\r") {
+					t.Errorf("%dx%d %s: line %d contains a control/format character", size[0], size[1], state, i)
+				}
+			}
+		}
+		check("browse")
+		for range len(store.entries) + 3 {
+			press(m, "j")
+			check("browse scrolled")
+		}
+		press(m, "s")
+		check("browse sorted")
+		for i := range weird {
+			press(m, "/")
+			typeText(m, strings.Fields(sanitize(weird[i]))[0])
+			check("search")
+			if cmd := press(m, "enter"); cmd != nil {
+				step(t, m, cmd)
+			}
+			check("detail")
+			press(m, "esc", "esc")
 		}
 	}
 }

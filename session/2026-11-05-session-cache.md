@@ -58,6 +58,15 @@
   `distribute` in view.go), with a column header row, item counts on
   folder rows, a 40-80 column preview pane and two columns of right margin
   in the header and status line.
+- tui access: your permission in the preview; the detail view loads the
+  resource permissions and names users/groups (owners first). Store method
+  `Permissions`, users/groups cached per load.
+- tui frame fix: borders were sometimes duplicated (frame shifted by one
+  line). Defences: stricter `sanitize` (all Cc/Cf, separators to spaces),
+  last column kept free and the frame clipped to the terminal height
+  (`TestFrameNeverOverflows`), and the MFA challenge triggered before the UI
+  starts so no TOTP prompt can write into it. The exact character in the
+  real data that caused the wrap is not known.
 
 ## Decisions
 

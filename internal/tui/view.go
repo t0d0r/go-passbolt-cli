@@ -125,9 +125,13 @@ func formatTime(t time.Time) string {
 	return t.Local().Format(dateLayout)
 }
 
-// View renders the screen.
+// View renders the screen. The last terminal column stays empty and the
+// frame is clipped to the terminal height: a line drawn wider than computed
+// (ambiguous-width or emoji characters) must not wrap, because a wrapped
+// line scrolls the screen and leaves stale frame parts behind.
 func (m *Model) View() string {
-	w, _ := m.size()
+	termW, termH := m.size()
+	w := max(termW-1, 1)
 	var main string
 	switch {
 	case m.mode == modeDetail:
@@ -138,7 +142,15 @@ func (m *Model) View() string {
 	default:
 		main = m.viewList(w)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.viewHeader(w), main, m.viewStatus(w), m.viewHints(w))
+	frame := lipgloss.JoinVertical(lipgloss.Left, m.viewHeader(w), main, m.viewStatus(w), m.viewHints(w))
+	lines := strings.Split(frame, "\n")
+	if len(lines) > termH {
+		lines = lines[:termH]
+	}
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, w, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) viewHeader(w int) string {
@@ -386,6 +398,9 @@ func (m *Model) viewPreview(w int) string {
 			" " + field("Modified", formatTime(e.Modified)),
 			" " + field("Created", formatTime(e.Created)),
 		}
+		if e.MyAccess != 0 {
+			lines = append(lines, " "+field("Your access", accessName(e.MyAccess)))
+		}
 		if e.Description != "" {
 			lines = append(lines, "", " "+styleLabel.Render("Description"))
 			for _, l := range wrap(sanitize(e.Description), inner-2) {
@@ -428,7 +443,49 @@ func (m *Model) viewDetail(w int) string {
 			lines = append(lines, "  "+l)
 		}
 	}
+	lines = append(lines, m.accessLines(inner-4)...)
+	if room := h - 2; len(lines) > room && room > 1 {
+		more := len(lines) - room + 1
+		lines = append(lines[:room-1], "  "+styleMuted.Render(fmt.Sprintf("... %d more lines (enlarge the terminal)", more)))
+	}
 	return box("Resource", "esc back", lines, w, h, true)
+}
+
+// accessLines renders who has access to the resource in the detail view.
+func (m *Model) accessLines(width int) []string {
+	out := []string{"", "  " + styleLabel.Render("Access")}
+	if m.detail.MyAccess != 0 {
+		out = append(out, "  "+field("You", accessName(m.detail.MyAccess)))
+	}
+	switch {
+	case m.sharesBusy:
+		return append(out, "  "+styleMuted.Render("loading..."))
+	case m.sharesErr != nil:
+		return append(out, "  "+styleErr.Render(fit("could not load: "+sanitize(m.sharesErr.Error()), width)))
+	case len(m.shares) <= 1:
+		return append(out, "  "+field("Shared", "no (only you)"))
+	}
+	users, groups := 0, 0
+	for _, sh := range m.shares {
+		if sh.Group {
+			groups++
+		} else {
+			users++
+		}
+	}
+	out = append(out, "  "+field("Shared", fmt.Sprintf("with %d users, %d groups", users, groups)))
+	for _, sh := range m.shares {
+		kind := "user "
+		if sh.Group {
+			kind = "group"
+		}
+		who := sanitize(sh.Name)
+		if sh.Detail != "" {
+			who += " " + styleMuted.Render("<"+sanitize(sh.Detail)+">")
+		}
+		out = append(out, "    "+styleMuted.Render(fmt.Sprintf("%-10s %s", accessName(sh.Type), kind))+"  "+who)
+	}
+	return out
 }
 
 func (m *Model) totpLine() string {

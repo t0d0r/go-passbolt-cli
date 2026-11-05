@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Folder is a Passbolt folder; ParentID is "" for the root.
@@ -26,6 +27,9 @@ type Entry struct {
 	Description string
 	Created     time.Time
 	Modified    time.Time
+	// MyAccess is the current user's permission type (see accessName), 0 if
+	// unknown.
+	MyAccess int
 }
 
 // Secret is the decrypted secret part of one resource.
@@ -38,11 +42,55 @@ type Secret struct {
 	TOTPSupported bool
 }
 
+// Passbolt permission types.
+const (
+	accessRead   = 1
+	accessUpdate = 7
+	accessOwner  = 15
+)
+
+func accessName(t int) string {
+	switch t {
+	case accessOwner:
+		return "owner"
+	case accessUpdate:
+		return "can update"
+	case accessRead:
+		return "can read"
+	}
+	return "unknown"
+}
+
+// Share is one permission on a resource: a user or a group and its type.
+type Share struct {
+	Group  bool
+	Name   string // full name or group name
+	Detail string // email for users
+	Type   int
+}
+
 // Store loads data from Passbolt. Implementations must be safe to call from
 // a goroutine other than the UI loop.
 type Store interface {
 	Load(ctx context.Context) ([]Folder, []Entry, error)
 	Secret(ctx context.Context, resourceID string) (Secret, error)
+	// Permissions lists who has access to a resource, owners first.
+	Permissions(ctx context.Context, resourceID string) ([]Share, error)
+}
+
+// sortShares orders by permission (owner first), users before groups, then
+// by name.
+func sortShares(shares []Share) {
+	sort.SliceStable(shares, func(i, j int) bool {
+		a, b := shares[i], shares[j]
+		if a.Type != b.Type {
+			return a.Type > b.Type
+		}
+		if a.Group != b.Group {
+			return !a.Group
+		}
+		return lessFold(a.Name, b.Name)
+	})
 }
 
 // tree indexes folders and entries for navigation.
@@ -161,17 +209,19 @@ func (t *tree) search(query string) []Entry {
 	return out
 }
 
-// sanitize removes control characters so server-provided text cannot inject
-// terminal escape sequences; tabs and newlines become spaces.
+// sanitize makes server-provided text safe and predictable to draw: it
+// removes control and format characters (escape sequences, zero-width
+// characters, joiners, soft hyphens, BOM, bidi controls) and turns tabs,
+// newlines and Unicode line/paragraph separators into spaces. A stray
+// character that the terminal draws with another width than computed would
+// otherwise wrap a line and shift the whole screen.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
-		case r == '\t' || r == '\n' || r == '\r':
+		case r == '\t' || r == '\n' || r == '\r' || r == '\u0085' || r == '\u2028' || r == '\u2029':
 			return ' '
-		case r < 0x20 || (r >= 0x7f && r <= 0x9f):
+		case unicode.Is(unicode.Cc, r) || unicode.Is(unicode.Cf, r):
 			return -1
-		case r == 0x200e || r == 0x200f || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069):
-			return -1 // bidi controls
 		}
 		return r
 	}, s)
