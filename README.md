@@ -4,6 +4,74 @@ A CLI tool to interact with [Passbolt](https://www.passbolt.com), an open source
 
 If you want to do something more complicated: [this Go module](https://github.com/passbolt/go-passbolt) to interact with Passbolt from Go might interest you.
 
+> [!NOTE]
+> **Unofficial fork.** This repository is a personal fork of
+> [passbolt/go-passbolt-cli](https://github.com/passbolt/go-passbolt-cli)
+> (based on v0.5.2). It is not affiliated with or endorsed by Passbolt SA;
+> "Passbolt" is their trademark. The additions below are not part of the
+> upstream project; report problems with them here, not upstream.
+
+# Fork additions
+
+Everything else in this README describes the upstream CLI and still applies.
+
+## Fewer prompts: keyring password and remembered MFA
+
+| Config key / flag | Values | Default | Effect |
+|---|---|---|---|
+| `passwordStore` | `none`, `keyring` | `none` | `keyring` keeps the private key password in the OS keyring (macOS Keychain, Secret Service on Linux, Windows Credential Manager). The password is saved only after it unlocked the key; a stored password that no longer works is removed and asked again. A `userPassword` in the config always wins and is never copied. |
+| `mfaRemember` | `true`, `false` | `true` | In `interactive-totp` mode, asks the server to remember the TOTP verification for this device (30 days, only if the organisation policy "Remember a month" is enabled) and caches the cookie in the user cache directory (mode 0600). |
+
+```bash
+passbolt configure --passwordStore keyring   # or use the wizard below
+passbolt lock                                # forget the stored password and the MFA cookie
+```
+
+Headless Linux hosts usually have no Secret Service; the CLI then warns and
+asks for the password as before.
+
+## `passbolt wizard`
+
+Step-by-step configuration: server address (with a reachability check),
+self-signed TLS, private key (validated, fingerprint shown), password
+storage, MFA mode and remember-me, a summary, an optional login test, then
+the config file is written with mode 0600. Existing settings are offered as
+defaults, so a partial configuration is completed. The wizard never asks for
+or stores a password or a TOTP seed.
+
+## `passbolt tui`
+
+A terminal UI to browse folders and resources:
+
+- preview strip above a full-width list (`v` cycles top / right / off)
+- search across all folders (`/`), sort by name, last modified or last
+  created (`s`)
+- favorites (`*` mark, `Favorites/` at the root, `F` view, `f` toggles on the
+  server)
+- detail view with who the resource is shared with
+- copy password (`c`), username (`u`), URI (`l`) or the current TOTP code
+  (`t`); passwords are masked until `p`
+
+Copied passwords and TOTP codes are removed from the clipboard after 30
+seconds and on exit, but only if the clipboard still holds them. Clipboard
+backends: `pbcopy`, `wl-copy`, `xclip`, `xsel`, otherwise OSC 52 through the
+terminal. Text from the server is stripped of control and format characters
+before it is drawn. Press `?` inside the UI for all keys.
+
+## Security notes for the additions
+
+- The keyring password can be read by any process running as the same user
+  while the keyring is unlocked; run `passbolt lock` when leaving the machine.
+- The cached MFA cookie replaces only the second factor; the private key and
+  its password are still required. Resetting MFA for the user on the server
+  revokes it.
+- Clipboard managers may keep a copied password in their history before the
+  30 second clear; exclude the terminal in their settings.
+- Never combine `passwordStore` or `mfaRemember` with a plain-text
+  `userPassword` or `mfaTotpToken` in the config file.
+
+Design notes and acceptance criteria: [`specs/`](specs/README.md).
+
 # API Compatibility
 
 The Go CLI is designed to work with the latest Passbolt API version, and we strongly recommend keeping your API up to date.
