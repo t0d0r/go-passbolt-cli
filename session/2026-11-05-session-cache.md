@@ -86,6 +86,9 @@
   Details in the "Security review changes" sections of the specs.
 - Not done: clipboard "concealed" hint for clipboard managers (pbcopy cannot
   set it); the remembered MFA token cannot be revoked by the CLI.
+- README now shows `docs/tui.gif`, recorded with vhs from `docs/tui.tape` on
+  `passbolt tui --demo` (made-up data, `DemoStore`); `make gif` regenerates
+  it. Open rendering question recorded in specs/tui.md ("Open").
 
 ## Decisions
 

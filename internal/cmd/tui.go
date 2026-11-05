@@ -30,6 +30,10 @@ seconds and on exit. Press ? inside the UI for the keys.`,
 		if !term.IsTerminal(int(os.Stdout.Fd())) {
 			return fmt.Errorf("tui needs an interactive terminal")
 		}
+		if demo, _ := cmd.Flags().GetBool("demo"); demo {
+			cmd.SilenceUsage = true
+			return runTUI(tui.NewDemoStore(), "https://passbolt.example.com (demo data)", nil)
+		}
 
 		loginCtx, cancel := util.GetContext()
 		client, err := util.GetClient(loginCtx)
@@ -57,41 +61,51 @@ seconds and on exit. Press ? inside the UI for the keys.`,
 		}()
 
 		store := tui.NewPassboltStore(client, int(viper.GetUint("workers")))
-		// OSC 52 goes to the controlling terminal only, never to a possibly
-		// redirected stdout/stderr.
-		var tty io.Writer
-		if f := tui.OpenTTY(); f != nil {
-			defer func() { _ = f.Close() }()
-			tty = f
-		}
-		clip := tui.NewSystemClipboard(tty)
-		model := tui.New(store, clip, viper.GetString("serverAddress"), viper.GetDuration("timeout"))
-
-		program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(context.Background()))
-		if len(tuiExitSignals) > 0 {
-			sig := make(chan os.Signal, 1)
-			signal.Notify(sig, tuiExitSignals...)
-			defer signal.Stop(sig)
-			go func() {
-				if _, ok := <-sig; ok {
-					program.Kill()
-				}
-			}()
-		}
-		_, runErr := program.Run()
-		if msg := model.ClearClipboard(); msg != "" {
-			fmt.Fprintln(os.Stderr, "Warning:", msg, "- clear your clipboard manually")
-		}
-		if errors.Is(runErr, tea.ErrProgramKilled) {
-			runErr = nil // ended by a signal; clipboard and logout handled
-		}
-		if n := store.Skipped(); n > 0 {
-			fmt.Fprintf(os.Stderr, "Note: %d resources of unsupported types were not shown\n", n)
-		}
-		return runErr
+		err = runTUI(store, viper.GetString("serverAddress"), store.Skipped)
+		return err
 	},
 }
 
 func init() {
+	tuiCmd.Flags().Bool("demo", false, "run on built-in made-up data, without a server (for screenshots and trying the UI)")
+	_ = tuiCmd.Flags().MarkHidden("demo")
 	rootCmd.AddCommand(tuiCmd)
+}
+
+// runTUI runs the UI on store until it quits or the terminal goes away,
+// then clears a pending secret from the clipboard.
+func runTUI(store tui.Store, server string, skipped func() int) error {
+	// OSC 52 goes to the controlling terminal only, never to a possibly
+	// redirected stdout/stderr.
+	var tty io.Writer
+	if f := tui.OpenTTY(); f != nil {
+		defer func() { _ = f.Close() }()
+		tty = f
+	}
+	clip := tui.NewSystemClipboard(tty)
+	model := tui.New(store, clip, server, viper.GetDuration("timeout"))
+
+	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(context.Background()))
+	if len(tuiExitSignals) > 0 {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, tuiExitSignals...)
+		defer signal.Stop(sig)
+		go func() {
+			if _, ok := <-sig; ok {
+				program.Kill()
+			}
+		}()
+	}
+	_, runErr := program.Run()
+	if msg := model.ClearClipboard(); msg != "" {
+		fmt.Fprintln(os.Stderr, "Warning:", msg, "- clear your clipboard manually")
+	}
+	if errors.Is(runErr, tea.ErrProgramKilled) {
+		runErr = nil // ended by a signal; clipboard and logout handled
+	}
+	if skipped != nil && skipped() > 0 {
+		n := skipped()
+		fmt.Fprintf(os.Stderr, "Note: %d resources of unsupported types were not shown\n", n)
+	}
+	return runErr
 }

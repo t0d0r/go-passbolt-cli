@@ -189,3 +189,21 @@ password; the 30 s clear limits but does not remove that exposure.
 - Store: requests hold a read lock, a re-login the write lock; re-login only
   on HTTP 401/403.
 - `client.Debug` is forced off inside the UI.
+
+## Demo mode and recording
+
+- `passbolt tui --demo` (hidden flag) runs the UI on `DemoStore`: built-in
+  made-up folders, resources (example.com addresses only), fake passwords,
+  one TOTP, made-up colleagues; favorites change in memory only. No login,
+  no network.
+- `docs/tui.tape` records `docs/tui.gif` with vhs (`make gif`), with pauses
+  of 2-4 s per screen.
+
+## Open
+
+- In a vhs recording, a sequence that opened and left a folder before
+  opening the detail view left the top lines of the previous layout on
+  screen (bubbletea skipped repainting them). A screen clear on layout
+  changes fixed that but left the screen blank in about 1 of 4 vhs runs, so
+  it was not kept. In a real pseudo-terminal the frames were correct; the
+  cause is not known.

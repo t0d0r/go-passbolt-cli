@@ -4,7 +4,7 @@ BIN    := bin/passbolt
 PREFIX ?= $(HOME)/.local
 ARGS   ?=
 
-.PHONY: help build build-linux test lint fmt check run clean install uninstall
+.PHONY: help build build-linux test lint fmt check run clean install uninstall gif
 
 help: ## list the targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -34,6 +34,10 @@ run: build ## build and run the CLI, pass arguments with ARGS="..."
 
 clean: ## remove build output
 	rm -rf bin coverage.out
+
+gif: build ## record docs/tui.gif from docs/tui.tape (needs vhs; made-up demo data only)
+	@command -v vhs >/dev/null || { echo "vhs not installed"; exit 1; }
+	vhs docs/tui.tape
 
 install: build ## install to $(PREFIX)/bin
 	install -d $(PREFIX)/bin

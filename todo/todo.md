@@ -17,4 +17,5 @@
 - [x] tui: borders, two-pane layout, sort by name / last modified / last created (specs/tui.md)
 - [x] security review fixes (specs/*.md "Security review changes")
 - [ ] after installing the cgo build: remove the old Keychain item created via /usr/bin/security (`security delete-generic-password -s go-passbolt-cli`)
-- [ ] README screenshot of the TUI with fake data
+- [x] README GIF of the TUI with made-up data (docs/tui.gif, make gif)
+- [ ] investigate stale lines after layout changes seen in vhs (specs/tui.md, Open)

@@ -50,7 +50,11 @@ password only if you choose to keep an existing one.
 
 ## `passbolt tui`
 
-A terminal UI to browse folders and resources:
+![passbolt tui with made-up demo data](docs/tui.gif)
+
+A terminal UI to browse folders and resources (the recording uses
+`passbolt tui --demo`, which runs on built-in made-up data without a server;
+regenerate it with `make gif`):
 
 - preview strip above a full-width list (`v` cycles top / right / off)
 - search across all folders (`/`), sort by name, last modified or last

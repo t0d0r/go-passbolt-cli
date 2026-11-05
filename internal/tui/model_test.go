@@ -1024,3 +1024,19 @@ func TestUnverifiableClearSaysRequested(t *testing.T) {
 		t.Errorf("status = %q, want a 'requested' message", m.status)
 	}
 }
+
+func TestDemoStore(t *testing.T) {
+	var _ Store = NewDemoStore()
+	m := New(NewDemoStore(), &fakeClip{readable: true}, "demo", time.Second)
+	m.Update(m.Init()())
+	if len(m.t.all) == 0 || len(m.t.folders) == 0 || len(m.t.favorites()) == 0 {
+		t.Fatal("demo data missing")
+	}
+	for _, e := range m.t.all {
+		for _, s := range []string{e.Name, e.Username, e.URI} {
+			if strings.Contains(s, "@") && !strings.Contains(s, "example.") {
+				t.Errorf("demo data contains a non-example address: %q", s)
+			}
+		}
+	}
+}
