@@ -42,8 +42,13 @@ resource names).
 
 ### Folder view (start screen, root folder)
 
-Rows: sub-folders (shown as `name/`) first, then resources of the folder,
-each sorted by name. Columns: name, username, URI.
+Rows: sub-folders (shown as `name/` with the item count) first, then
+resources of the folder. A header row names the columns: name, username,
+the date when sorting by date, and URI (folder path in search). Column
+widths follow the content: if everything fits, each column is as wide as
+its longest value; otherwise username and URI get up to a quarter of the
+row each and the name the rest. The URI column is dropped when it would be
+cut below 12 columns. The preview pane is 40 to 80 columns wide.
 
 | Key | Action |
 |---|---|

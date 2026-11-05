@@ -616,3 +616,40 @@ func TestLiveTOTPShownWithPassword(t *testing.T) {
 		t.Error("TOTP code still shown after hiding")
 	}
 }
+
+// TestColumnsSizedToContent guards against the username column being pushed
+// to the far right on wide terminals.
+func TestColumnsSizedToContent(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 230, Height: 20})
+	for _, line := range strings.Split(m.View(), "\n") {
+		i := strings.Index(line, "Root Mail")
+		if i < 0 {
+			continue
+		}
+		j := strings.Index(line, "root@example.com")
+		// longest name in the root folder is "Root Mail" (9) -> gap of 2
+		if got := ansi.StringWidth(line[i:j]); got != len("Root Mail")+colGap {
+			t.Errorf("username starts %d columns after the name, want %d", got, len("Root Mail")+colGap)
+		}
+		return
+	}
+	t.Fatal("Root Mail row not found")
+}
+
+func TestDistribute(t *testing.T) {
+	cases := []struct{ space, n, u, x, wn, wu, wx int }{
+		{100, 20, 10, 30, 20, 10, 30}, // fits: content widths
+		{40, 60, 30, 30, 20, 10, 10},  // tight: user/extra a quarter each
+		{60, 10, 40, 40, 10, 35, 15},  // short names give space back to user, then extra
+	}
+	for _, c := range cases {
+		n, u, x := distribute(c.space, c.n, c.u, c.x)
+		if n != c.wn || u != c.wu || x != c.wx {
+			t.Errorf("distribute(%d, %d, %d, %d) = %d, %d, %d; want %d, %d, %d", c.space, c.n, c.u, c.x, n, u, x, c.wn, c.wu, c.wx)
+		}
+		if n+u+x > c.space {
+			t.Errorf("distribute(%d, ...) overflows: %d", c.space, n+u+x)
+		}
+	}
+}

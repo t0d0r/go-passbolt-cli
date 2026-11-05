@@ -53,6 +53,11 @@
   name, last modified, last created; created/modified shown in preview,
   detail and as a list column. Clipboard clear now driven by a one-second
   clock (also drives the live TOTP code in the detail view).
+- tui spacing: on wide terminals the name column took 75% of the row and
+  pushed usernames far right. Columns are now sized from the content (see
+  `distribute` in view.go), with a column header row, item counts on
+  folder rows, a 40-80 column preview pane and two columns of right margin
+  in the header and status line.
 
 ## Decisions
 

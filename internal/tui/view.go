@@ -59,8 +59,9 @@ func (m *Model) mainHeight() int {
 	return max(h-headerLines-footerLines, minMainHeight)
 }
 
-// listRows is the number of list rows inside the list box.
-func (m *Model) listRows() int { return m.mainHeight() - 2 }
+// listRows is the number of list rows inside the list box (minus borders
+// and the column header).
+func (m *Model) listRows() int { return max(m.mainHeight()-3, 1) }
 
 // fit truncates s to width w (ANSI and wide-character aware) and pads it.
 func fit(s string, w int) string {
@@ -132,10 +133,10 @@ func (m *Model) View() string {
 	case m.mode == modeDetail:
 		main = m.viewDetail(w)
 	case w >= twoPaneWidth:
-		lw := w * 3 / 5
-		main = lipgloss.JoinHorizontal(lipgloss.Top, m.viewList(lw, true), m.viewPreview(w-lw))
+		pw := min(max(w*2/5, 40), 80) // preview: 40..80 columns
+		main = lipgloss.JoinHorizontal(lipgloss.Top, m.viewList(w-pw), m.viewPreview(pw))
 	default:
-		main = m.viewList(w, false)
+		main = m.viewList(w)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, m.viewHeader(w), main, m.viewStatus(w), m.viewHints(w))
 }
@@ -144,7 +145,8 @@ func (m *Model) viewHeader(w int) string {
 	left := styleBadge.Render("passbolt") + " " + styleMuted.Render(m.server)
 	right := ""
 	if !m.loading || len(m.t.folders) > 0 || m.t.all != nil {
-		right = styleMuted.Render(fmt.Sprintf("%d folders | %d resources ", len(m.t.folders), len(m.t.all)))
+		// two trailing spaces keep the text clear of terminal overlays
+		right = styleMuted.Render(fmt.Sprintf("%d folders | %d resources  ", len(m.t.folders), len(m.t.all)))
 	}
 	gap := w - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
@@ -153,7 +155,7 @@ func (m *Model) viewHeader(w int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func (m *Model) viewList(w int, withPreview bool) string {
+func (m *Model) viewList(w int) string {
 	h := m.mainHeight()
 	inner := w - 2
 	rows := m.rows()
@@ -178,12 +180,105 @@ func (m *Model) viewList(w int, withPreview bool) string {
 	case len(rows) == 0:
 		lines = []string{"", styleMuted.Render("  (empty folder)")}
 	default:
-		lines = m.listLines(rows, inner, withPreview)
+		lines = m.listLines(rows, inner)
 	}
 	return box(title, footer, lines, w, h, true)
 }
 
-func (m *Model) listLines(rows []row, inner int, withPreview bool) []string {
+// columns holds the list column widths for one render.
+type columns struct {
+	name, user, date, extra int
+}
+
+const colGap = 2
+
+func (m *Model) entryTime(e *Entry) time.Time {
+	if m.sort == sortCreated {
+		return e.Created
+	}
+	return e.Modified
+}
+
+func (m *Model) entryExtra(e *Entry) string {
+	if m.mode == modeSearch {
+		return m.t.path(e.FolderID)
+	}
+	return sanitize(e.URI)
+}
+
+func folderCount(t *tree, id string) string {
+	n := len(t.children[id]) + len(t.entries[id])
+	if n == 1 {
+		return "1 item"
+	}
+	return fmt.Sprintf("%d items", n)
+}
+
+// distribute fits name, user and extra widths into space. If everything
+// fits, each column is as wide as its longest value; otherwise user and
+// extra get up to a quarter each, the name the rest, and space the name
+// does not need goes back to user, then extra.
+func distribute(space, name, user, extra int) (int, int, int) {
+	if name+user+extra <= space {
+		return name, user, extra
+	}
+	u, x := min(user, space/4), min(extra, space/4)
+	n := space - u - x
+	if n > name {
+		spare := n - name
+		n = name
+		add := min(user-u, spare)
+		u += add
+		x += min(extra-x, spare-add)
+	}
+	return max(n, 4), u, x
+}
+
+// layoutColumns sizes the columns from the content of all rows, so widths
+// stay stable while scrolling. The extra column (URI, or folder path in
+// search) is dropped when it would be cut below 12 columns.
+func (m *Model) layoutColumns(rows []row, avail int) columns {
+	maxName, maxUser, maxExtra := len("Name"), len("Username"), 0
+	for _, r := range rows {
+		if r.folder != nil {
+			maxName = max(maxName, ansi.StringWidth(sanitize(r.folder.Name))+1)
+			maxUser = max(maxUser, ansi.StringWidth(folderCount(m.t, r.folder.ID)))
+			continue
+		}
+		maxName = max(maxName, ansi.StringWidth(sanitize(r.entry.Name)))
+		maxUser = max(maxUser, ansi.StringWidth(sanitize(r.entry.Username)))
+		maxExtra = max(maxExtra, ansi.StringWidth(m.entryExtra(r.entry)))
+	}
+	var c columns
+	space := avail - colGap
+	if m.sort != sortName {
+		c.date = len(dateLayout)
+		space -= c.date + colGap
+	}
+	if maxExtra > 0 {
+		maxExtra = max(maxExtra, len("Folder"))
+		n, u, x := distribute(space-colGap, maxName, maxUser, maxExtra)
+		if x >= min(12, maxExtra) {
+			c.name, c.user, c.extra = n, u, x
+			return c
+		}
+	}
+	c.name, c.user, _ = distribute(space, maxName, maxUser, 0)
+	return c
+}
+
+func (c columns) join(name, user, date, extra string) string {
+	parts := []string{fit(name, c.name), fit(user, c.user)}
+	if c.date > 0 {
+		parts = append(parts, fit(date, c.date))
+	}
+	if c.extra > 0 {
+		parts = append(parts, fit(extra, c.extra))
+	}
+	return strings.Join(parts, strings.Repeat(" ", colGap))
+}
+
+func (m *Model) listLines(rows []row, inner int) []string {
 	height := m.listRows()
 	if m.cursor < m.offset {
 		m.offset = m.cursor
@@ -193,21 +288,19 @@ func (m *Model) listLines(rows []row, inner int, withPreview bool) []string {
 	}
 
 	avail := inner - 2 // "> " marker
-	dateW := 0
-	if m.sort != sortName {
-		dateW = len(dateLayout)
-	}
-	userW := max(avail/4, 8)
-	nameW := avail - userW - dateW - 2
-	extraW := 0
-	if !withPreview {
-		nameW = (avail - userW - dateW - 3) * 11 / 20
-		extraW = avail - nameW - userW - dateW - 3
-	}
-	nameW = max(nameW, 8)
+	c := m.layoutColumns(rows, avail)
 
-	var lines []string
-	for i := m.offset; i < len(rows) && len(lines) < height; i++ {
+	dateTitle := "Modified"
+	if m.sort == sortCreated {
+		dateTitle = "Created"
+	}
+	extraTitle := "URI"
+	if m.mode == modeSearch {
+		extraTitle = "Folder"
+	}
+	lines := []string{"  " + styleLabel.Render(c.join("Name", "Username", dateTitle, extraTitle))}
+
+	for i := m.offset; i < len(rows) && len(lines) <= height; i++ {
 		r := rows[i]
 		sel := i == m.cursor
 		marker := "  "
@@ -216,52 +309,32 @@ func (m *Model) listLines(rows []row, inner int, withPreview bool) []string {
 		}
 
 		if r.folder != nil {
-			text := fit(sanitize(r.folder.Name)+"/", avail)
+			text := c.join(sanitize(r.folder.Name)+"/", folderCount(m.t, r.folder.ID), "", "")
 			if sel {
-				lines = append(lines, styleSelected.Render(marker+text))
-			} else {
-				lines = append(lines, marker+styleFolder.Render(text))
+				lines = append(lines, styleSelected.Render(fit(marker+text, inner)))
+				continue
 			}
+			name := fit(sanitize(r.folder.Name)+"/", c.name)
+			lines = append(lines, marker+styleFolder.Render(name)+strings.Repeat(" ", colGap)+styleMuted.Render(folderCount(m.t, r.folder.ID)))
 			continue
 		}
 
 		e := r.entry
-		name := fit(sanitize(e.Name), nameW)
-		user := fit(sanitize(e.Username), userW)
 		date := ""
-		if dateW > 0 {
-			t := e.Modified
-			if m.sort == sortCreated {
-				t = e.Created
-			}
-			date = fit(formatTime(t), dateW)
+		if c.date > 0 {
+			date = formatTime(m.entryTime(e))
 		}
-		extra := ""
-		if extraW > 0 {
-			if m.mode == modeSearch {
-				extra = fit(m.t.path(e.FolderID), extraW)
-			} else {
-				extra = fit(sanitize(e.URI), extraW)
-			}
-		}
-
 		if sel {
-			parts := []string{name, user}
-			if dateW > 0 {
-				parts = append(parts, date)
-			}
-			if extraW > 0 {
-				parts = append(parts, extra)
-			}
-			lines = append(lines, styleSelected.Render(fit(marker+strings.Join(parts, " "), inner)))
+			lines = append(lines, styleSelected.Render(fit(marker+c.join(sanitize(e.Name), sanitize(e.Username), date, m.entryExtra(e)), inner)))
 			continue
 		}
-		line := marker + styleText.Render(name) + " " + styleMuted.Render(user)
-		if dateW > 0 {
-			line += " " + styleMuted.Render(date)
+		gap := strings.Repeat(" ", colGap)
+		line := marker + styleText.Render(fit(sanitize(e.Name), c.name)) + gap + styleMuted.Render(fit(sanitize(e.Username), c.user))
+		if c.date > 0 {
+			line += gap + styleMuted.Render(fit(date, c.date))
 		}
-		if extraW > 0 {
-			line += " " + styleMuted.Render(extra)
+		if c.extra > 0 {
+			line += gap + styleMuted.Render(fit(m.entryExtra(e), c.extra))
 		}
 		lines = append(lines, line)
 	}
@@ -392,7 +465,7 @@ func (m *Model) viewStatus(w int) string {
 	right := ""
 	if m.clipArmed {
 		left := max(int(m.clipExpires.Sub(m.now()).Round(time.Second)/time.Second), 0)
-		right = styleWarn.Render(fmt.Sprintf("%s in clipboard, clears in %ds ", strings.ToLower(m.clipLabel), left))
+		right = styleWarn.Render(fmt.Sprintf("%s in clipboard, clears in %ds  ", strings.ToLower(m.clipLabel), left))
 	}
 	gap := w - ansi.StringWidth(left) - ansi.StringWidth(right) - 1
 	if gap < 1 {
