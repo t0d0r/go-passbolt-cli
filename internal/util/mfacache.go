@@ -46,7 +46,7 @@ func NewMFACookieCache(serverAddress, userPrivateKey string) (*MFACookieCache, e
 	if err != nil {
 		return nil, fmt.Errorf("finding cache directory: %w", err)
 	}
-	sum := sha256.Sum256([]byte(serverAddress + "\x00" + fp))
+	sum := sha256.Sum256([]byte(normalizeServer(serverAddress) + "\x00" + fp))
 	name := hex.EncodeToString(sum[:16]) + ".json"
 	return &MFACookieCache{path: filepath.Join(dir, "go-passbolt-cli", "mfa", name)}, nil
 }

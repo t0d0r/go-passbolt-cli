@@ -116,3 +116,20 @@ Linux hosts, where no Secret Service is running.
 - Every process running as the same user can read the MFA cache file and,
   while the login keychain is unlocked, the keyring item. Run `passbolt lock`
   when leaving the machine for long.
+
+## Security review changes (2026-11-05)
+
+- Defaults: `mfaRemember=false`, `passwordStore=none` (opt-in); the wizard
+  explains the risk before asking. Remember-me only for https servers.
+- macOS: native Keychain via `github.com/keybase/go-keychain` (cgo): the item
+  trusts only the creating binary, `AccessibleWhenUnlockedThisDeviceOnly`, no
+  iCloud sync. Verified on macOS with a dummy item: the decrypt ACL lists
+  only the creating binary, not `/usr/bin/security`. Without cgo the
+  go-keyring fallback warns. Backend interface `passwordBackend`
+  (`passwordbackend*.go`); tests use an in-memory backend.
+- Keyring account and MFA cache id use the normalized server address
+  (scheme/host lower case, default port and trailing slash removed).
+- A stored password is deleted only when it fails to unlock the key, not on
+  other client errors.
+- `passbolt lock --all` removes every item of the service and the MFA cache
+  directory; help text says server-side tokens stay valid until MFA reset.

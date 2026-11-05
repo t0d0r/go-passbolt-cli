@@ -16,9 +16,21 @@ var lockCmd = &cobra.Command{
 	Short: "Forget the stored password and the remembered MFA cookie",
 	Long: `Removes the private key password from the OS keyring and the remembered
 MFA cookie from the user cache directory, for the configured server and user
-key. The next command asks for the password and the TOTP code again.`,
+key (--all: for every server and key). The next command asks for the
+password and the TOTP code again.
+
+This only deletes the local copies. A remembered MFA token stays valid on the
+server until it expires (30 days); if the cookie may have been copied, reset
+MFA for the user in Passbolt to revoke it.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if all, _ := cmd.Flags().GetBool("all"); all {
+			if err := util.ForgetAll(); err != nil {
+				return err
+			}
+			fmt.Println("All stored passwords and MFA cookies of this CLI removed")
+			return nil
+		}
 		serverAddress := viper.GetString("serverAddress")
 		if serverAddress == "" {
 			return fmt.Errorf("serverAddress is not defined")
@@ -51,5 +63,6 @@ key. The next command asks for the password and the TOTP code again.`,
 }
 
 func init() {
+	lockCmd.Flags().Bool("all", false, "remove the stored passwords and MFA cookies of every server and key")
 	rootCmd.AddCommand(lockCmd)
 }

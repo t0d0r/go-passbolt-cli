@@ -4,16 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ProtonMail/gopenpgp/v3/crypto"
 	"github.com/passbolt/go-passbolt/api"
-	"github.com/zalando/go-keyring"
 )
 
 // PasswordStoreKeyring keeps the private key passphrase in the OS keyring:
 // macOS Keychain, Secret Service (D-Bus) on Linux, Credential Manager on
-// Windows.
+// Windows. It is opt-in (default "none").
 const PasswordStoreKeyring = "keyring"
 
 // keyringService is the service name of the keyring item.
@@ -35,7 +37,7 @@ func keyringAccount(serverAddress, userPrivateKey string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fp + "@" + serverAddress, nil
+	return fp + "@" + normalizeServer(serverAddress), nil
 }
 
 // ForgetPassword removes the stored passphrase for serverAddress and the user
@@ -45,13 +47,34 @@ func ForgetPassword(serverAddress, userPrivateKey string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := keyring.Delete(keyringService, account); err != nil {
-		if errors.Is(err, keyring.ErrNotFound) {
+	if err := keyringBackend.Delete(keyringService, account); err != nil {
+		if errors.Is(err, errPasswordNotFound) {
 			return false, nil
 		}
 		return false, err
 	}
 	return true, nil
+}
+
+// ForgetAll removes every stored passphrase of this CLI and every cached MFA
+// cookie, for all servers and keys.
+func ForgetAll() error {
+	var errs []error
+	if err := keyringBackend.DeleteAll(keyringService); err != nil {
+		errs = append(errs, fmt.Errorf("keyring: %w", err))
+	}
+	if dir, err := os.UserCacheDir(); err == nil {
+		if err := os.RemoveAll(filepath.Join(dir, "go-passbolt-cli", "mfa")); err != nil {
+			errs = append(errs, fmt.Errorf("MFA cache: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// isUnlockError reports whether err from api.NewClient means the passphrase
+// did not unlock the key (as opposed to, for example, a bad server address).
+func isUnlockError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unlock")
 }
 
 // newUnlockedClient creates the API client, which unlocks the private key
@@ -60,6 +83,9 @@ func ForgetPassword(serverAddress, userPrivateKey string) (bool, error) {
 // longer unlocks the key is removed and the user is prompted once. A prompted
 // passphrase is saved to the keyring only after it unlocked the key.
 func newUnlockedClient(httpClient *http.Client, serverAddress, userPrivateKey, configPassword, store string, prompt func() (string, error)) (*api.Client, error) {
+	if _, err := url.Parse(serverAddress); err != nil {
+		return nil, fmt.Errorf("parsing serverAddress: %w", err)
+	}
 	if configPassword != "" {
 		return api.NewClient(httpClient, "", serverAddress, userPrivateKey, configPassword)
 	}
@@ -74,20 +100,23 @@ func newUnlockedClient(httpClient *http.Client, serverAddress, userPrivateKey, c
 	}
 
 	if account != "" {
-		stored, err := keyring.Get(keyringService, account)
+		stored, err := keyringBackend.Get(keyringService, account)
 		switch {
 		case err == nil:
 			client, cerr := api.NewClient(httpClient, "", serverAddress, userPrivateKey, stored)
 			if cerr == nil {
 				return client, nil
 			}
+			if !isUnlockError(cerr) {
+				return nil, cerr
+			}
 			fmt.Fprintln(os.Stderr, "Stored password no longer unlocks the key, removing it from the keyring")
-			if derr := keyring.Delete(keyringService, account); derr != nil {
+			if derr := keyringBackend.Delete(keyringService, account); derr != nil && !errors.Is(derr, errPasswordNotFound) {
 				fmt.Fprintf(os.Stderr, "Warning: removing stored password: %v\n", derr)
 			}
-		case errors.Is(err, keyring.ErrNotFound):
+		case errors.Is(err, errPasswordNotFound):
 		default:
-			fmt.Fprintf(os.Stderr, "Warning: reading keyring: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: reading %s: %v\n", keyringBackend.Name(), err)
 			account = ""
 		}
 	}
@@ -101,8 +130,8 @@ func newUnlockedClient(httpClient *http.Client, serverAddress, userPrivateKey, c
 		return nil, err
 	}
 	if account != "" {
-		if err := keyring.Set(keyringService, account, password); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: saving password to keyring: %v\n", err)
+		if err := keyringBackend.Set(keyringService, account, password); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: saving password to %s: %v\n", keyringBackend.Name(), err)
 		}
 	}
 	return client, nil

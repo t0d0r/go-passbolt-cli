@@ -95,7 +95,10 @@ func GetClient(ctx context.Context) (*api.Client, error) {
 	// The MFA cookie transport must be installed before api.NewClient, which
 	// takes a copy of httpClient.
 	mfaMode := viper.GetString("mfaMode")
-	mfaRemember := mfaMode == "interactive-totp" && viper.GetBool("mfaRemember")
+	// Remember-me only over https: the cookie is a bearer token for the
+	// second factor and must not travel in clear text.
+	mfaRemember := mfaMode == "interactive-totp" && viper.GetBool("mfaRemember") &&
+		strings.HasPrefix(strings.ToLower(serverAddress), "https://")
 	var mfaCache *MFACookieCache
 	if mfaRemember {
 		mfaCache, err = NewMFACookieCache(serverAddress, userPrivateKey)

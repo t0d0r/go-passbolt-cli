@@ -9,8 +9,8 @@ ARGS   ?=
 help: ## list the targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
 
-build: ## build the CLI for this machine into bin/passbolt
-	CGO_ENABLED=0 go build -trimpath -o $(BIN) .
+build: ## build the CLI for this machine into bin/passbolt (cgo on macOS for the native Keychain)
+	go build -trimpath -o $(BIN) .
 
 build-linux: ## cross-build a static linux/amd64 binary into bin/passbolt-linux-amd64
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/passbolt-linux-amd64 .

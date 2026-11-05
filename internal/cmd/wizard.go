@@ -236,10 +236,14 @@ func wizardKey(w *wizardIO) error {
 }
 
 func wizardPassword(w *wizardIO) error {
-	def := util.PasswordStoreKeyring
-	if viper.InConfig("passwordstore") && viper.GetString("passwordStore") == "none" {
-		def = "none"
+	def := "none"
+	if viper.InConfig("passwordstore") && viper.GetString("passwordStore") == util.PasswordStoreKeyring {
+		def = util.PasswordStoreKeyring
 	}
+	w.printf("\nOptional: keep the key password in the OS keyring, so it is not asked on\n" +
+		"every run. Any program running as you while the keyring is unlocked may be\n" +
+		"able to use it (on macOS only this passbolt binary may read it without a\n" +
+		"prompt). With 'none' the password is asked every time.\n")
 	store, err := w.choose("Store the key password in the OS keyring", []string{util.PasswordStoreKeyring, "none"}, def)
 	if err != nil {
 		return err
@@ -275,8 +279,18 @@ func wizardMFA(w *wizardIO) error {
 	}
 	viper.Set("mfaMode", mode)
 
-	if mode == "interactive-totp" {
-		remember, err := w.confirm("Remember MFA on this device for 30 days (if the server allows)?", viper.GetBool("mfaRemember"))
+	switch {
+	case mode != "interactive-totp":
+		viper.Set("mfaRemember", false)
+	case !strings.HasPrefix(viper.GetString("serverAddress"), "https://"):
+		w.printf("Remembering MFA is only offered for https servers.\n")
+		viper.Set("mfaRemember", false)
+	default:
+		w.printf("\nOptional: remember the TOTP verification on this device for 30 days (only\n" +
+			"if the server policy allows it). The cookie is stored in your cache\n" +
+			"directory; together with the key and a stored password it allows a login\n" +
+			"without the second factor. 'passbolt lock' removes it locally.\n")
+		remember, err := w.confirm("Remember MFA on this device?", viper.GetBool("mfaRemember"))
 		if err != nil {
 			return err
 		}
@@ -372,12 +386,53 @@ func wizardConfigPath() (string, error) {
 	return filepath.Join(dir, "go-passbolt-cli", "go-passbolt-cli.toml"), nil
 }
 
+// wizardSavedKeys are the settings the wizard writes. Everything else, in
+// particular values that came only from flags or environment variables, is
+// left out of the file.
+var wizardSavedKeys = []string{
+	"serverAddress", "userPrivateKey", "passwordStore", "mfaMode", "mfaRemember",
+	"mfaRetrys", "mfaDelay", "tlsSkipVerify", "tlsClientCert", "tlsClientPrivateKey",
+	"serverVerifyToken", "serverVerifyEncToken",
+}
+
+// wizardSettings returns what wizardSave writes: the allowlisted keys, the
+// TOTP seed only in noninteractive-totp mode, a plain-text password only if
+// the user chose to keep an existing one, and timeout/workers only if they
+// were in the config file.
+func wizardSettings() map[string]any {
+	out := map[string]any{}
+	for _, k := range wizardSavedKeys {
+		out[k] = viper.Get(k)
+	}
+	if viper.GetString("mfaMode") == "noninteractive-totp" {
+		for _, k := range []string{"mfaTotpToken", "mfaTotpOffset", "totpToken", "totpOffset"} {
+			if v := viper.Get(k); v != nil && fmt.Sprint(v) != "" && fmt.Sprint(v) != "0s" {
+				out[k] = v
+			}
+		}
+	}
+	if pw := viper.GetString("userPassword"); pw != "" {
+		out["userPassword"] = pw
+	}
+	for _, k := range []string{"timeout", "workers"} {
+		if viper.InConfig(strings.ToLower(k)) {
+			out[k] = viper.Get(k)
+		}
+	}
+	return out
+}
+
 func wizardSave(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	viper.SetConfigPermissions(0o600)
-	if err := viper.WriteConfigAs(path); err != nil {
+	v := viper.New()
+	v.SetConfigType("toml")
+	v.SetConfigPermissions(0o600)
+	for k, val := range wizardSettings() {
+		v.Set(k, val)
+	}
+	if err := v.WriteConfigAs(path); err != nil {
 		return err
 	}
 	return os.Chmod(path, 0o600)
@@ -406,7 +461,17 @@ func wizardCheckServer(ctx context.Context, serverAddress string) error {
 	return nil
 }
 
+// wizardTestLogin logs in with the new settings but stores nothing: the
+// password is not written to the keyring and the MFA cookie not cached,
+// because the user has not agreed to save the configuration yet.
 func wizardTestLogin(_ context.Context) error {
+	store, remember := viper.GetString("passwordStore"), viper.GetBool("mfaRemember")
+	viper.Set("passwordStore", "none")
+	viper.Set("mfaRemember", false)
+	defer func() {
+		viper.Set("passwordStore", store)
+		viper.Set("mfaRemember", remember)
+	}()
 	ctx, cancel := util.GetContext()
 	defer cancel()
 	client, err := util.GetClient(ctx)
@@ -422,8 +487,11 @@ var wizardCmd = &cobra.Command{
 	Short: "Set up the configuration step by step",
 	Long: `Walks through the configuration: server address, TLS, private key,
 password storage and MFA. Existing settings are offered as defaults, so a
-partial configuration is completed. Optionally tests the login, then saves
-the config file (mode 0600). No password or TOTP seed is written to it.`,
+partial configuration is completed. Optionally tests the login (without
+storing anything), then saves the config file (mode 0600). Storing the
+password in the OS keyring and remembering MFA are opt-in. Only the wizard's
+settings are written; a TOTP seed only in noninteractive-totp mode and a
+plain-text password only if you choose to keep an existing one.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := &wizardIO{in: bufio.NewReader(os.Stdin), out: cmd.OutOrStdout()}

@@ -66,7 +66,7 @@ func resetWizardViper(t *testing.T) {
 	t.Helper()
 	viper.Reset()
 	viper.SetDefault("mfaMode", "interactive-totp")
-	viper.SetDefault("mfaRemember", true)
+	viper.SetDefault("mfaRemember", false)
 	viper.SetDefault("passwordStore", "none")
 	t.Cleanup(viper.Reset)
 }
@@ -93,7 +93,7 @@ func TestWizard_EmptyConfig(t *testing.T) {
 	checks := map[string]string{
 		"serverAddress":  "https://pb.example.com",
 		"userPrivateKey": armored,
-		"passwordStore":  "keyring",
+		"passwordStore":  "none",
 		"mfaMode":        "interactive-totp",
 	}
 	for k, want := range checks {
@@ -101,8 +101,8 @@ func TestWizard_EmptyConfig(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, got, want)
 		}
 	}
-	if viper.GetBool("tlsSkipVerify") || !viper.GetBool("mfaRemember") {
-		t.Errorf("tlsSkipVerify=%v mfaRemember=%v, want false/true", viper.GetBool("tlsSkipVerify"), viper.GetBool("mfaRemember"))
+	if viper.GetBool("tlsSkipVerify") || viper.GetBool("mfaRemember") {
+		t.Errorf("tlsSkipVerify=%v mfaRemember=%v, want false/false (opt-in)", viper.GetBool("tlsSkipVerify"), viper.GetBool("mfaRemember"))
 	}
 	if r.saved == "" || r.loginRuns != 0 {
 		t.Errorf("saved=%q loginRuns=%d, want saved and no login", r.saved, r.loginRuns)
@@ -265,5 +265,82 @@ func TestWizardSave_WritesFileWith0600(t *testing.T) {
 	}
 	if got := viper.GetString("passwordStore"); got != "keyring" {
 		t.Errorf("passwordStore = %q after reload", got)
+	}
+}
+
+func TestWizard_OptInChoices(t *testing.T) {
+	resetWizardViper(t)
+	keyPath, _ := wizardKeyFile(t)
+	r := &wizardRun{}
+	err := r.run(lines("https://pb.example.com", "", keyPath, "keyring", "", "y", "n", ""))
+	if err != nil {
+		t.Fatalf("wizard: %v\n%s", err, r.out.String())
+	}
+	if viper.GetString("passwordStore") != "keyring" || !viper.GetBool("mfaRemember") {
+		t.Error("explicit opt-in not applied")
+	}
+	for _, want := range []string{"Any program running as you", "without the second factor"} {
+		if !strings.Contains(r.out.String(), want) {
+			t.Errorf("warning %q not shown", want)
+		}
+	}
+}
+
+func TestWizard_NoRememberOverHTTP(t *testing.T) {
+	resetWizardViper(t)
+	viper.Set("mfaRemember", true)
+	keyPath, _ := wizardKeyFile(t)
+	r := &wizardRun{}
+	// http needs confirmation; then no remember question is asked
+	err := r.run(lines("http://pb.local", "y", "", keyPath, "", "", "n", ""))
+	if err != nil {
+		t.Fatalf("wizard: %v\n%s", err, r.out.String())
+	}
+	if viper.GetBool("mfaRemember") || !strings.Contains(r.out.String(), "only offered for https") {
+		t.Error("remember-me allowed over http")
+	}
+}
+
+func TestWizardSettings_Allowlist(t *testing.T) {
+	resetWizardViper(t)
+	viper.Set("serverAddress", "https://pb.example.com")
+	viper.Set("mfaMode", "interactive-totp")
+	viper.Set("mfaTotpToken", "SEED-FROM-ENV") // e.g. MFATOTPTOKEN in the environment
+	viper.Set("somethingElse", "from a flag")
+	got := wizardSettings()
+	if _, ok := got["mfaTotpToken"]; ok {
+		t.Error("TOTP seed written in interactive mode")
+	}
+	if _, ok := got["somethingElse"]; ok {
+		t.Error("non-allowlisted key written")
+	}
+	if _, ok := got["userPassword"]; ok {
+		t.Error("empty password written")
+	}
+	if got["serverAddress"] != "https://pb.example.com" {
+		t.Error("server address missing")
+	}
+
+	viper.Set("mfaMode", "noninteractive-totp")
+	if wizardSettings()["mfaTotpToken"] != "SEED-FROM-ENV" {
+		t.Error("TOTP seed dropped although noninteractive mode needs it")
+	}
+
+	viper.Set("userPassword", "kept-by-user")
+	if wizardSettings()["userPassword"] != "kept-by-user" {
+		t.Error("password the user chose to keep was dropped")
+	}
+}
+
+func TestWizardTestLogin_StoresNothing(t *testing.T) {
+	resetWizardViper(t)
+	viper.Set("passwordStore", "keyring")
+	viper.Set("mfaRemember", true)
+	viper.Set("serverAddress", "") // makes GetClient fail before any network call
+	if err := wizardTestLogin(context.Background()); err == nil {
+		t.Fatal("expected an error without server address")
+	}
+	if viper.GetString("passwordStore") != "keyring" || !viper.GetBool("mfaRemember") {
+		t.Error("settings not restored after the test login")
 	}
 }

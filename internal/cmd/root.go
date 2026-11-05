@@ -71,7 +71,7 @@ func init() {
 	rootCmd.PersistentFlags().String("userPrivateKey", "", "Passbolt User Private Key")
 	rootCmd.PersistentFlags().String("userPrivateKeyFile", "", "Passbolt User Private Key File, if set then the userPrivateKey will be Overwritten with the File Content")
 	rootCmd.PersistentFlags().String("userPassword", "", "Passbolt User Password")
-	rootCmd.PersistentFlags().String("passwordStore", "none", "Where to keep the private key password between runs: none or keyring (macOS Keychain, Secret Service, Windows Credential Manager); ignored if userPassword is set")
+	rootCmd.PersistentFlags().String("passwordStore", "none", "Opt-in: where to keep the private key password between runs: none or keyring (macOS Keychain, Secret Service, Windows Credential Manager); ignored if userPassword is set")
 	rootCmd.PersistentFlags().String("mfaMode", "interactive-totp", "How to Handle MFA, the following Modes exist: none, interactive-totp and noninteractive-totp")
 
 	rootCmd.PersistentFlags().String("totpToken", "", "Token to generate TOTP's, only used in nointeractive-totp mode")
@@ -82,7 +82,7 @@ func init() {
 	rootCmd.PersistentFlags().MarkDeprecated("totpOffset", "use --mfaTotpOffset instead")
 	rootCmd.PersistentFlags().Duration("mfaTotpOffset", time.Duration(0), "TOTP Generation offset only used in noninteractive-totp mode")
 
-	rootCmd.PersistentFlags().Bool("mfaRemember", true, "Ask the server to remember MFA for this device (30 days, if the server policy allows) and cache the cookie locally, only used in interactive-totp mode")
+	rootCmd.PersistentFlags().Bool("mfaRemember", false, "Opt-in: ask the server to remember MFA for this device (30 days, if the server policy allows) and cache the cookie locally; https only, interactive-totp mode only")
 
 	rootCmd.PersistentFlags().Uint("mfaRetrys", 3, "How often to retry TOTP Auth, only used in nointeractive modes")
 	rootCmd.PersistentFlags().Duration("mfaDelay", time.Second*10, "Delay between MFA Attempts, only used in noninteractive modes")

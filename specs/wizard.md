@@ -62,3 +62,14 @@ keeps the shown default.
 
 The wizard reads the private key file but never prints key material, the
 password or tokens. The config file keeps mode 0600.
+
+## Security review changes (2026-11-05)
+
+- Password storage and remember-me are opt-in (default none / no) with a
+  short risk explanation; remember-me is not offered for http servers.
+- The login test runs with passwordStore=none and mfaRemember=false, so
+  nothing is stored before the user agrees to save.
+- Saving writes an allowlist of keys through a fresh viper instance:
+  values that only came from flags or the environment are not written; TOTP
+  seeds only in noninteractive-totp mode; a plain-text password only if the
+  user chose to keep it.
