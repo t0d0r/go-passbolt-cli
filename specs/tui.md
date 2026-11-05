@@ -176,3 +176,16 @@ only write); opening URIs in a browser.
 Passwords are masked by default and fetched per resource. The clipboard is
 visible to other applications and clipboard managers while it holds a
 password; the 30 s clear limits but does not remove that exposure.
+
+## Security review changes (2026-11-05)
+
+- Clipboard tools only from `/usr/bin` and `/bin` (absolute paths), 3 s
+  timeout, no stdout/stderr pipes (a forked xclip helper would block).
+- OSC 52 only to `/dev/tty` when it is a terminal; otherwise copying fails
+  with a message. OSC 52 clears are reported as "requested".
+- A failed clear stays armed and is retried every second; on exit a failure
+  is printed as a warning.
+- SIGHUP and SIGQUIT end the UI like q: clipboard cleared, logout.
+- Store: requests hold a read lock, a re-login the write lock; re-login only
+  on HTTP 401/403.
+- `client.Debug` is forced off inside the UI.

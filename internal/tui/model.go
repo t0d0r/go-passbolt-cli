@@ -296,8 +296,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clockMsg:
 		m.ticking = false
 		if m.clipArmed && !m.now().Before(m.clipExpires) {
-			if m.clearClipboard() {
-				m.setStatus(statusInfo, "Clipboard cleared")
+			if msg, kind := m.clearClipboard(); msg != "" {
+				m.setStatus(kind, "%s", msg)
 			}
 		}
 		return m, m.clockCmd()
@@ -611,17 +611,32 @@ func (m *Model) copyTOTP(s Secret) tea.Cmd {
 }
 
 // clearClipboard empties the clipboard if it still holds the copied secret
-// (or cannot be read). It returns true if it cleared.
-func (m *Model) clearClipboard() bool {
+// (or cannot be read). A failed clear stays armed, so the clock retries it.
+// It returns a status message ("" if nothing was done) and its kind.
+func (m *Model) clearClipboard() (string, statusKind) {
 	if !m.clipArmed {
-		return false
+		return "", statusInfo
+	}
+	if cur, ok := m.clip.Read(); ok && sha256.Sum256([]byte(cur)) != m.clipHash {
+		m.clipArmed = false // the user copied something else meanwhile
+		return "", statusInfo
+	}
+	if err := m.clip.Copy(""); err != nil {
+		return fmt.Sprintf("Clipboard clear failed, retrying: %v", err), statusError
 	}
 	m.clipArmed = false
-	if cur, ok := m.clip.Read(); ok && sha256.Sum256([]byte(cur)) != m.clipHash {
-		return false // the user copied something else meanwhile
+	if !m.clip.Verifiable() {
+		return "Clipboard clear requested (the terminal may ignore it)", statusInfo
 	}
-	return m.clip.Copy("") == nil
+	return "Clipboard cleared", statusInfo
 }
 
-// ClearClipboard is called on exit to remove a pending secret.
-func (m *Model) ClearClipboard() { m.clearClipboard() }
+// ClearClipboard is called on exit to remove a pending secret. It returns a
+// message if the clipboard may still hold it.
+func (m *Model) ClearClipboard() string {
+	msg, kind := m.clearClipboard()
+	if kind == statusError {
+		return msg
+	}
+	return ""
+}

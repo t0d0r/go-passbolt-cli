@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/passbolt/go-passbolt/api"
@@ -33,6 +35,23 @@ func TestSharesFromPermissions(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("share %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestIsSessionError(t *testing.T) {
+	cases := map[error]bool{
+		&api.APIError{StatusCode: 401}:                            true,
+		&api.APIError{StatusCode: 403}:                            true,
+		fmt.Errorf("wrapped: %w", &api.APIError{StatusCode: 401}): true,
+		&api.APIError{StatusCode: 404}:                            false,
+		&api.APIError{StatusCode: 500}:                            false,
+		errors.New("handling MFA callback: restart"):              false,
+		nil: false,
+	}
+	for err, want := range cases {
+		if got := isSessionError(err); got != want {
+			t.Errorf("isSessionError(%v) = %v, want %v", err, got, want)
 		}
 	}
 }

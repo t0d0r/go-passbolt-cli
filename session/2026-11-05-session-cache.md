@@ -76,6 +76,16 @@
   Bug found by the tests and fixed: adding the first favorite inserted the
   `Favorites/` row and moved the cursor to the neighbouring resource; the
   cursor now follows the resource id after favorite changes and reloads.
+- Security review (independent agent, 2 MED + 11 LOW findings) fixed:
+  opt-in defaults, native macOS Keychain with a creator-only ACL (checked on
+  macOS with a dummy item), normalized keyring/cache names, `lock --all`,
+  https-only remember, wizard allowlist save and side-effect-free login
+  test, OSC 52 only to /dev/tty, clipboard tools from /usr/bin and /bin,
+  clipboard timeout, SIGHUP/SIGQUIT clean exit, retried and honest clipboard
+  clear, RWMutex around re-login (401/403 only), debug off in the TUI.
+  Details in the "Security review changes" sections of the specs.
+- Not done: clipboard "concealed" hint for clipboard managers (pbcopy cannot
+  set it); the remembered MFA token cannot be revoked by the CLI.
 
 ## Decisions
 

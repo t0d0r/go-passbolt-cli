@@ -19,13 +19,20 @@ Everything else in this README describes the upstream CLI and still applies.
 
 | Config key / flag | Values | Default | Effect |
 |---|---|---|---|
-| `passwordStore` | `none`, `keyring` | `none` | `keyring` keeps the private key password in the OS keyring (macOS Keychain, Secret Service on Linux, Windows Credential Manager). The password is saved only after it unlocked the key; a stored password that no longer works is removed and asked again. A `userPassword` in the config always wins and is never copied. |
-| `mfaRemember` | `true`, `false` | `true` | In `interactive-totp` mode, asks the server to remember the TOTP verification for this device (30 days, only if the organisation policy "Remember a month" is enabled) and caches the cookie in the user cache directory (mode 0600). |
+| `passwordStore` | `none`, `keyring` | `none` | Opt-in. `keyring` keeps the private key password in the OS keyring. On macOS the CLI uses the native Keychain API: the item is readable without a prompt only by the passbolt binary that created it (rebuilding the binary asks once to allow it again), stays on this device (no iCloud) and is usable only while the Mac is unlocked. Secret Service on Linux, Credential Manager on Windows. The password is saved only after it unlocked the key; a stored password that no longer works is removed. A `userPassword` in the config always wins and is never copied. |
+| `mfaRemember` | `true`, `false` | `false` | Opt-in, https servers only. In `interactive-totp` mode, asks the server to remember the TOTP verification for this device (30 days, only if the organisation policy "Remember a month" is enabled) and caches the cookie in the user cache directory (mode 0600). |
 
 ```bash
 passbolt configure --passwordStore keyring   # or use the wizard below
 passbolt lock                                # forget the stored password and the MFA cookie
+passbolt lock --all                          # ... for every server and key
 ```
+
+`lock` deletes local copies only. A remembered MFA token stays valid on the
+server until it expires; reset MFA for the user in Passbolt to revoke it.
+On macOS build with cgo (`make build`), otherwise the Keychain item falls back
+to `/usr/bin/security` and is readable by any process of the user (the CLI
+warns about it).
 
 Headless Linux hosts usually have no Secret Service; the CLI then warns and
 asks for the password as before.
@@ -34,10 +41,12 @@ asks for the password as before.
 
 Step-by-step configuration: server address (with a reachability check),
 self-signed TLS, private key (validated, fingerprint shown), password
-storage, MFA mode and remember-me, a summary, an optional login test, then
+storage and remember-me (both opt-in, each with a short explanation of the
+risk), MFA mode, a summary, an optional login test that stores nothing, then
 the config file is written with mode 0600. Existing settings are offered as
-defaults, so a partial configuration is completed. The wizard never asks for
-or stores a password or a TOTP seed.
+defaults, so a partial configuration is completed. Only the wizard's settings
+are written: a TOTP seed only in `noninteractive-totp` mode, a plain-text
+password only if you choose to keep an existing one.
 
 ## `passbolt tui`
 
@@ -53,22 +62,30 @@ A terminal UI to browse folders and resources:
   (`t`); passwords are masked until `p`
 
 Copied passwords and TOTP codes are removed from the clipboard after 30
-seconds and on exit, but only if the clipboard still holds them. Clipboard
-backends: `pbcopy`, `wl-copy`, `xclip`, `xsel`, otherwise OSC 52 through the
-terminal. Text from the server is stripped of control and format characters
+seconds, on exit and when the terminal or SSH session closes (SIGHUP), but
+only if the clipboard still holds them; a failed clear is retried and
+reported. Clipboard tools (`pbcopy`, `wl-copy`, `xclip`, `xsel`) are taken
+from `/usr/bin` or `/bin` only, never from `PATH`. Without one, OSC 52 is
+written to the controlling terminal (`/dev/tty`) only, never to a
+redirected stdout/stderr; the terminal cannot confirm the clear, so the
+status says "requested". Text from the server is stripped of control and format characters
 before it is drawn. Press `?` inside the UI for all keys.
 
 ## Security notes for the additions
 
-- The keyring password can be read by any process running as the same user
-  while the keyring is unlocked; run `passbolt lock` when leaving the machine.
-- The cached MFA cookie replaces only the second factor; the private key and
-  its password are still required. Resetting MFA for the user on the server
-  revokes it.
+- Both conveniences are off by default. With `passwordStore=keyring` and
+  `mfaRemember=true` the key, its password and a 30-day second factor are all
+  on the device: malware running as you could log in without you. Turn them
+  on only on a machine you trust, and run `passbolt lock` when leaving it.
+- On macOS (cgo build) only this passbolt binary reads the Keychain item
+  without a prompt; on Linux any process in your session can use an unlocked
+  Secret Service.
+- The cached MFA cookie is never sent over `http://`; resetting MFA for the
+  user on the server revokes it.
 - Clipboard managers may keep a copied password in their history before the
   30 second clear; exclude the terminal in their settings.
-- Never combine `passwordStore` or `mfaRemember` with a plain-text
-  `userPassword` or `mfaTotpToken` in the config file.
+- Never combine these settings with a plain-text `userPassword` or
+  `mfaTotpToken` in the config file.
 
 Design notes and acceptance criteria: [`specs/`](specs/README.md).
 

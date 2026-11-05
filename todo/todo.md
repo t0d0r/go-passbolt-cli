@@ -15,3 +15,6 @@
 - [ ] try `passbolt tui` against the real server: load time with many resources, v5 metadata, clipboard clear
 - [ ] tui: OSC 52 inside tmux needs `set -g allow-passthrough on` / `set-clipboard on`; document or detect
 - [x] tui: borders, two-pane layout, sort by name / last modified / last created (specs/tui.md)
+- [x] security review fixes (specs/*.md "Security review changes")
+- [ ] after installing the cgo build: remove the old Keychain item created via /usr/bin/security (`security delete-generic-password -s go-passbolt-cli`)
+- [ ] README screenshot of the TUI with fake data

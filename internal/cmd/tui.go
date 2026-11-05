@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"os/signal"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/passbolt/go-passbolt-cli/internal/tui"
@@ -45,6 +47,8 @@ seconds and on exit. Press ? inside the UI for the keys.`,
 		client.MFACallback = func(context.Context, *api.Client, *api.APIResponse) (http.Cookie, error) {
 			return http.Cookie{}, errors.New("the server asks for MFA again, quit and restart passbolt tui")
 		}
+		// Debug output would print requests and cookies into the UI.
+		client.Debug = false
 		cmd.SilenceUsage = true
 		defer func() {
 			ctx, cancel := util.GetContext()
@@ -53,11 +57,34 @@ seconds and on exit. Press ? inside the UI for the keys.`,
 		}()
 
 		store := tui.NewPassboltStore(client, int(viper.GetUint("workers")))
-		clip := tui.NewSystemClipboard(os.Stderr)
+		// OSC 52 goes to the controlling terminal only, never to a possibly
+		// redirected stdout/stderr.
+		var tty io.Writer
+		if f := tui.OpenTTY(); f != nil {
+			defer func() { _ = f.Close() }()
+			tty = f
+		}
+		clip := tui.NewSystemClipboard(tty)
 		model := tui.New(store, clip, viper.GetString("serverAddress"), viper.GetDuration("timeout"))
 
-		_, runErr := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(context.Background())).Run()
-		model.ClearClipboard()
+		program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(context.Background()))
+		if len(tuiExitSignals) > 0 {
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, tuiExitSignals...)
+			defer signal.Stop(sig)
+			go func() {
+				if _, ok := <-sig; ok {
+					program.Kill()
+				}
+			}()
+		}
+		_, runErr := program.Run()
+		if msg := model.ClearClipboard(); msg != "" {
+			fmt.Fprintln(os.Stderr, "Warning:", msg, "- clear your clipboard manually")
+		}
+		if errors.Is(runErr, tea.ErrProgramKilled) {
+			runErr = nil // ended by a signal; clipboard and logout handled
+		}
 		if n := store.Skipped(); n > 0 {
 			fmt.Fprintf(os.Stderr, "Note: %d resources of unsupported types were not shown\n", n)
 		}

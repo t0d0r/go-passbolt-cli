@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,7 +18,9 @@ type PassboltStore struct {
 	client  *api.Client
 	workers int
 	skipped atomic.Int64
-	mu      sync.Mutex // serializes re-login
+	// mu: API requests hold the read lock; a re-login, which replaces the
+	// client's session and CSRF cookies, holds the write lock.
+	mu sync.RWMutex
 
 	dirMu  sync.Mutex
 	users  map[string]api.User
@@ -34,11 +37,24 @@ func NewPassboltStore(client *api.Client, workers int) *PassboltStore {
 // left out.
 func (s *PassboltStore) Skipped() int { return int(s.skipped.Load()) }
 
-// retry runs fn; on error it logs in again once and retries, which covers an
-// expired session.
+// use runs fn while no re-login can replace the client's session.
+func (s *PassboltStore) use(fn func() error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return fn()
+}
+
+// isSessionError reports an expired or rejected session (HTTP 401/403).
+func isSessionError(err error) bool {
+	var apiErr *api.APIError
+	return errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden)
+}
+
+// retry runs fn; if the session was rejected it logs in again once (with no
+// request in flight) and retries.
 func (s *PassboltStore) retry(ctx context.Context, fn func() error) error {
-	err := fn()
-	if err == nil || ctx.Err() != nil {
+	err := s.use(fn)
+	if !isSessionError(err) || ctx.Err() != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -47,7 +63,7 @@ func (s *PassboltStore) retry(ctx context.Context, fn func() error) error {
 	if lerr != nil {
 		return err
 	}
-	return fn()
+	return s.use(fn)
 }
 
 // Load returns all folders and resources visible to the user, without secrets.
@@ -79,7 +95,13 @@ func (s *PassboltStore) Load(ctx context.Context) ([]Folder, []Entry, error) {
 		folders[i] = Folder{ID: f.ID, ParentID: f.FolderParentID, Name: f.Name}
 	}
 
-	entries, skipped, err := s.decryptAll(ctx, resources)
+	var entries []Entry
+	var skipped int
+	err = s.use(func() error {
+		var err error
+		entries, skipped, err = s.decryptAll(ctx, resources)
+		return err
+	})
 	s.skipped.Store(int64(skipped))
 	return folders, entries, err
 }
@@ -238,7 +260,13 @@ func (s *PassboltStore) Permissions(ctx context.Context, resourceID string) ([]S
 	if err != nil {
 		return nil, err
 	}
-	users, groups, err := s.directory(ctx)
+	var users map[string]api.User
+	var groups map[string]string
+	err = s.use(func() error {
+		var err error
+		users, groups, err = s.directory(ctx)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

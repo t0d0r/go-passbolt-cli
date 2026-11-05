@@ -54,14 +54,24 @@ func (f *fakeStore) Secret(_ context.Context, id string) (Secret, error) {
 }
 
 type fakeClip struct {
-	text     string
-	readable bool
-	copies   int
+	text      string
+	readable  bool
+	copies    int
+	failClear bool
 }
 
-func (c *fakeClip) Copy(text string) error { c.text = text; c.copies++; return nil }
-func (c *fakeClip) Read() (string, bool)   { return c.text, c.readable }
-func (c *fakeClip) Name() string           { return "fake" }
+func (c *fakeClip) Verifiable() bool { return c.readable }
+
+func (c *fakeClip) Copy(text string) error {
+	if text == "" && c.failClear {
+		return errors.New("clipboard busy")
+	}
+	c.text = text
+	c.copies++
+	return nil
+}
+func (c *fakeClip) Read() (string, bool) { return c.text, c.readable }
+func (c *fakeClip) Name() string         { return "fake" }
 
 const totpKey = "JBSWY3DPEHPK3PXP"
 
@@ -980,5 +990,37 @@ func TestReloadKeepsSelection(t *testing.T) {
 	step(t, m, press(m, "r"))
 	if selectedName(m) != "Root Mail" {
 		t.Errorf("after reload the cursor is on %q", selectedName(m))
+	}
+}
+
+func TestFailedClearIsRetriedAndReported(t *testing.T) {
+	clip := &fakeClip{readable: true, failClear: true}
+	m := newLoaded(t, testData(), clip)
+	openDetail(t, m, "root mail")
+	tick := step(t, m, press(m, "c"))
+	advance(m, 31*time.Second)
+	tick = step(t, m, tick)
+	if clip.text != "s3cret-root" || m.statusKind != statusError || !m.clipArmed {
+		t.Fatalf("failed clear: text=%q status=%q armed=%v", clip.text, m.status, m.clipArmed)
+	}
+	if tick == nil {
+		t.Fatal("no retry scheduled")
+	}
+	clip.failClear = false
+	step(t, m, tick)
+	if clip.text != "" || m.clipArmed {
+		t.Error("retry did not clear")
+	}
+}
+
+func TestUnverifiableClearSaysRequested(t *testing.T) {
+	clip := &fakeClip{readable: false}
+	m := newLoaded(t, testData(), clip)
+	openDetail(t, m, "root mail")
+	tick := step(t, m, press(m, "c"))
+	advance(m, 31*time.Second)
+	step(t, m, tick)
+	if !strings.Contains(m.status, "requested") || strings.Contains(m.status, "Clipboard cleared") {
+		t.Errorf("status = %q, want a 'requested' message", m.status)
 	}
 }
