@@ -89,6 +89,12 @@
 - README now shows `docs/tui.gif`, recorded with vhs from `docs/tui.tape` on
   `passbolt tui --demo` (made-up data, `DemoStore`); `make gif` regenerates
   it. Open rendering question recorded in specs/tui.md ("Open").
+- Published: branch `local/session-cache` pushed to the public fork
+  `t0d0r/go-passbolt-cli`, which uses it as the default branch; `main`
+  stays an unchanged copy of upstream. Local remotes: `fork` (push target,
+  tracked by the branch) and `upstream` (passbolt/go-passbolt-cli, fetch
+  only). Updating from upstream: fetch tags, rebase onto the new tag,
+  `make check`, `git push --force-with-lease fork local/session-cache`.
 
 ## Decisions
 
@@ -130,6 +136,12 @@ make build-linux    # bin/passbolt-linux-amd64 + sha256
 ```
 
 ## Next step
+
+After installing the cgo build (`make install`), remove the old Keychain item
+created via /usr/bin/security; then look into the open rendering question
+(specs/tui.md, Open).
+
+## Previous next step
 
 Run `passbolt tui` against the real server; run `passbolt wizard` end to
 end on a fresh config; then decide the password store for headless Linux
