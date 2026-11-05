@@ -41,7 +41,43 @@ const (
 	headerLines   = 1
 	footerLines   = 2
 	minMainHeight = 5
+
+	topPreviewHeight    = 6  // border + 4 rows
+	topPreviewMinHeight = 16 // terminals lower than this hide the top preview
+	rightPreviewMax     = 60
 )
+
+// previewMode places the preview of the selected row.
+type previewMode int
+
+const (
+	previewTop previewMode = iota
+	previewRight
+	previewOff
+)
+
+func (p previewMode) String() string {
+	switch p {
+	case previewRight:
+		return "right"
+	case previewOff:
+		return "off"
+	default:
+		return "top"
+	}
+}
+
+// effectivePreview is the preview mode that fits the terminal.
+func (m *Model) effectivePreview() previewMode {
+	w, h := m.size()
+	switch {
+	case m.preview == previewTop && h < topPreviewMinHeight:
+		return previewOff
+	case m.preview == previewRight && w < twoPaneWidth:
+		return previewOff
+	}
+	return m.preview
+}
 
 func (m *Model) size() (int, int) {
 	w, h := m.width, m.height
@@ -54,9 +90,14 @@ func (m *Model) size() (int, int) {
 	return w, h
 }
 
+// mainHeight is the height of the list box (or the detail card).
 func (m *Model) mainHeight() int {
 	_, h := m.size()
-	return max(h-headerLines-footerLines, minMainHeight)
+	h -= headerLines + footerLines
+	if m.mode != modeDetail && m.effectivePreview() == previewTop {
+		h -= topPreviewHeight
+	}
+	return max(h, minMainHeight)
 }
 
 // listRows is the number of list rows inside the list box (minus borders
@@ -136,8 +177,10 @@ func (m *Model) View() string {
 	switch {
 	case m.mode == modeDetail:
 		main = m.viewDetail(w)
-	case w >= twoPaneWidth:
-		pw := min(max(w*2/5, 40), 80) // preview: 40..80 columns
+	case m.effectivePreview() == previewTop:
+		main = lipgloss.JoinVertical(lipgloss.Left, m.viewPreviewTop(w), m.viewList(w))
+	case m.effectivePreview() == previewRight:
+		pw := min(max(w/3, 40), rightPreviewMax)
 		main = lipgloss.JoinHorizontal(lipgloss.Top, m.viewList(w-pw), m.viewPreview(pw))
 	default:
 		main = m.viewList(w)
@@ -272,10 +315,26 @@ func (m *Model) layoutColumns(rows []row, avail int) columns {
 		n, u, x := distribute(space-colGap, maxName, maxUser, maxExtra)
 		if x >= min(12, maxExtra) {
 			c.name, c.user, c.extra = n, u, x
-			return c
+			return m.addSpareDate(c, avail)
 		}
 	}
 	c.name, c.user, _ = distribute(space, maxName, maxUser, 0)
+	return m.addSpareDate(c, avail)
+}
+
+// addSpareDate shows the modified date when sorting by name and the row
+// still has room for it.
+func (m *Model) addSpareDate(c columns, avail int) columns {
+	if c.date > 0 {
+		return c
+	}
+	used := c.name + colGap + c.user
+	if c.extra > 0 {
+		used += colGap + c.extra
+	}
+	if avail-used >= colGap+len(dateLayout) {
+		c.date = len(dateLayout)
+	}
 	return c
 }
 
@@ -363,6 +422,46 @@ func wrap(text string, w int) []string {
 		return nil
 	}
 	return strings.Split(lipgloss.NewStyle().Width(w).Render(text), "\n")
+}
+
+// viewPreviewTop renders the preview as a strip above the list: fields in
+// two columns, the description (or key hints) on the last row.
+func (m *Model) viewPreviewTop(w int) string {
+	inner := w - 2
+	colW := max(inner/2, 20)
+	two := func(l1, v1, l2, v2 string) string {
+		return fit(" "+field(l1, v1), colW) + " " + field(l2, v2)
+	}
+	r, ok := m.selected()
+	switch {
+	case !ok:
+		return box("Preview", "v layout", []string{"", styleMuted.Render(" Nothing selected")}, w, topPreviewHeight, false)
+	case r.folder != nil:
+		f := r.folder
+		lines := []string{
+			two("Path", m.t.path(f.ID), "Contains", fmt.Sprintf("%d folders, %d resources", len(m.t.children[f.ID]), len(m.t.entries[f.ID]))),
+			"",
+			"",
+			" " + styleMuted.Render("enter open | h back | v layout"),
+		}
+		return box(sanitize(f.Name)+"/", "v layout", lines, w, topPreviewHeight, false)
+	}
+	e := r.entry
+	access := "-"
+	if e.MyAccess != 0 {
+		access = accessName(e.MyAccess)
+	}
+	last := " " + styleMuted.Render("enter details | c copy password | u copy user | v layout")
+	if e.Description != "" {
+		last = " " + field("Notes", sanitize(e.Description))
+	}
+	lines := []string{
+		two("Username", sanitize(e.Username), "Modified", formatTime(e.Modified)),
+		two("URI", sanitize(e.URI), "Created", formatTime(e.Created)),
+		two("Folder", m.t.path(e.FolderID), "Access", access),
+		last,
+	}
+	return box(sanitize(e.Name), "v layout", lines, w, topPreviewHeight, false)
 }
 
 func (m *Model) viewPreview(w int) string {
@@ -544,9 +643,9 @@ func (m *Model) hintList() []hint {
 		return []hint{{"p", "show"}, {"c", "password"}, {"u", "user"}, {"l", "uri"}, {"t", "totp"}, {"esc", "back"}, {"?", "help"}}
 	default:
 		if m.help {
-			return []hint{{"j/k", "move"}, {"enter", "open"}, {"h", "parent"}, {"/", "search"}, {"s", "sort"}, {"c", "copy password"}, {"u", "copy username"}, {"r", "reload"}, {"q", "quit"}}
+			return []hint{{"j/k", "move"}, {"enter", "open"}, {"h", "parent"}, {"/", "search"}, {"s", "sort"}, {"v", "preview " + m.preview.String()}, {"c", "copy password"}, {"u", "copy username"}, {"r", "reload"}, {"q", "quit"}}
 		}
-		return []hint{{"enter", "open"}, {"h", "back"}, {"/", "search"}, {"s", "sort"}, {"c", "password"}, {"u", "user"}, {"q", "quit"}, {"?", "help"}}
+		return []hint{{"enter", "open"}, {"h", "back"}, {"/", "search"}, {"s", "sort"}, {"v", "layout"}, {"c", "password"}, {"u", "user"}, {"q", "quit"}, {"?", "help"}}
 	}
 }
 

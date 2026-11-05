@@ -86,6 +86,7 @@ type Model struct {
 	offset   int
 	query    string
 	sort     sortMode
+	preview  previewMode
 
 	detail       *Entry
 	secret       *Secret
@@ -347,6 +348,10 @@ func (m *Model) keyBrowse(msg tea.KeyMsg) tea.Cmd {
 		return m.loadCmd()
 	case k == "s" || k == "tab":
 		m.cycleSort()
+	case k == "v":
+		m.preview = (m.preview + 1) % 3
+		m.offset = 0
+		m.setStatus(statusInfo, "Preview: %s", m.preview)
 	case k == "?":
 		m.help = !m.help
 	}

@@ -31,9 +31,20 @@ Layout: a header bar (badge, server, folder/resource counts), the main
 area in rounded-border boxes (title in the top border, sort mode and
 position in the bottom border), a status line (coloured by kind; while a
 secret is in the clipboard it shows "clears in Ns") and a key-hint line
-with key caps. From 100 columns the browse and search screens show two
-panes: the list (3/5) and a preview of the selected row (folder contents,
-or resource fields, created/modified, description; never secrets). Colours
+with key caps.
+
+Preview of the selected row (never secrets), toggled with `v`:
+
+- `top` (default): a strip of 6 lines between the header and the list,
+  fields in two columns (username, URI, folder | modified, created, your
+  access) and the description or key hints on the last row. The list below
+  it uses the full width. Hidden automatically below 16 terminal lines.
+- `right`: a pane next to the list, a third of the width, 40 to 60 columns;
+  only from 100 columns.
+- `off`: list only.
+
+When sorting by name the list shows the modified date as a column if the
+row has room for it after name, username and URI. Colours
 adapt to light and dark backgrounds. `?` toggles the full key list. Text is
 truncated ANSI- and wide-character-aware so no line exceeds the terminal
 width. All displayed text from the server
@@ -48,7 +59,7 @@ the date when sorting by date, and URI (folder path in search). Column
 widths follow the content: if everything fits, each column is as wide as
 its longest value; otherwise username and URI get up to a quarter of the
 row each and the name the rest. The URI column is dropped when it would be
-cut below 12 columns. The preview pane is 40 to 80 columns wide.
+cut below 12 columns.
 
 | Key | Action |
 |---|---|
@@ -56,6 +67,7 @@ cut below 12 columns. The preview pane is 40 to 80 columns wide.
 | enter, l, right | open folder / open resource detail |
 | backspace (DEL or ^H), h, left | parent folder |
 | / | search |
+| v | cycle the preview: top, right, off |
 | s, tab | cycle sort: name, last modified, last created (newest first; folders stay first, by name) |
 | c / u | copy password / username of the selected resource |
 | r | reload |

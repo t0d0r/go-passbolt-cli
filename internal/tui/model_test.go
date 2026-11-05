@@ -579,6 +579,7 @@ func TestSortModes(t *testing.T) {
 func TestTwoPaneLayout(t *testing.T) {
 	m := newLoaded(t, testData(), &fakeClip{})
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	press(m, "v") // top -> right
 	v := m.View()
 	for _, want := range []string{"Folder", "sort: name", "1/3", "Contains", "passbolt"} {
 		if !strings.Contains(v, want) {
@@ -728,8 +729,49 @@ func TestPreviewShowsMyAccess(t *testing.T) {
 	for selectedName(m) != "Root Mail" {
 		press(m, "j")
 	}
+	if v := m.View(); !strings.Contains(v, "Access") || !strings.Contains(v, "owner") {
+		t.Error("top preview lacks the access level")
+	}
+	press(m, "v")
 	if !strings.Contains(m.View(), "Your access") {
-		t.Error("preview lacks Your access")
+		t.Error("right preview lacks Your access")
+	}
+}
+
+func TestTopPreviewLayout(t *testing.T) {
+	m := newLoaded(t, testData(), &fakeClip{})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	for selectedName(m) != "Root Mail" {
+		press(m, "j")
+	}
+	lines := strings.Split(m.View(), "\n")
+	if len(lines) != 30 {
+		t.Fatalf("frame has %d lines, want 30", len(lines))
+	}
+	// preview strip directly under the header, the list below it
+	if !strings.Contains(lines[1], "Root Mail") || !strings.Contains(lines[2], "root@example.com") || !strings.Contains(lines[2], "2026-10-01") {
+		t.Errorf("preview strip not on top:\n%s\n%s\n%s", lines[1], lines[2], lines[3])
+	}
+	if !strings.Contains(lines[1+topPreviewHeight], "/") || !strings.Contains(lines[2+topPreviewHeight], "Name") {
+		t.Errorf("list box not below the preview:\n%s\n%s", lines[1+topPreviewHeight], lines[2+topPreviewHeight])
+	}
+	// the list uses the full width: the URI column is not cut
+	if !strings.Contains(m.View(), "https://mail.example.com") {
+		t.Error("URI cut although the list has the full width")
+	}
+
+	press(m, "v", "v") // top -> right -> off
+	if m.preview != previewOff || strings.Contains(m.View(), "Created") {
+		t.Error("preview not hidden")
+	}
+	press(m, "v")
+	if m.preview != previewTop {
+		t.Error("v did not cycle back to top")
+	}
+
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 12})
+	if m.effectivePreview() != previewOff {
+		t.Error("top preview not hidden on a low terminal")
 	}
 }
 

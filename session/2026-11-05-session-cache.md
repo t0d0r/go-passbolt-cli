@@ -67,6 +67,10 @@
   (`TestFrameNeverOverflows`), and the MFA challenge triggered before the UI
   starts so no TOTP prompt can write into it. The exact character in the
   real data that caused the wrap is not known.
+- tui layout: the right preview left too much empty space and cut the list
+  columns. Default is now a 6-line preview strip on top with the list below
+  at full width (`v` cycles top / right / off); modified date shown as a
+  column when there is room.
 
 ## Decisions
 
