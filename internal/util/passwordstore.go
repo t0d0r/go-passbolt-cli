@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ProtonMail/gopenpgp/v3/crypto"
 	"github.com/passbolt/go-passbolt/api"
 )
 
@@ -20,15 +19,6 @@ const PasswordStoreKeyring = "keyring"
 
 // keyringService is the service name of the keyring item.
 const keyringService = "go-passbolt-cli"
-
-// keyFingerprint returns the fingerprint of an armored (locked) key.
-func keyFingerprint(userPrivateKey string) (string, error) {
-	key, err := crypto.NewKeyFromArmored(userPrivateKey)
-	if err != nil {
-		return "", fmt.Errorf("reading user key: %w", err)
-	}
-	return key.GetFingerprint(), nil
-}
 
 // keyringAccount names the keyring item for one server and one user key, so
 // different servers or keys never share a passphrase. It holds no secret.
