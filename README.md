@@ -145,6 +145,20 @@ You can set up MFA also using the configuration sub command. Only TOTP is suppor
 
 To enable server verification, you need to run `passbolt verify` once, after that the server will always be verified if the same config is used.
 
+# Terminal UI
+
+![passbolt tui with made-up demo data](docs/tui.gif)
+
+`passbolt tui` opens a full-screen terminal UI to browse folders and resources. The recording above uses `passbolt tui --demo`, which runs on built-in made-up data without a server (regenerate it with `vhs docs/tui.tape`).
+
+- preview strip above a full-width list (`v` cycles top / right / off)
+- search across all folders (`/`), sort by name, last modified or last created (`s`)
+- favorites (`*` mark, `Favorites/` at the root, `F` view, `f` toggles on the server)
+- detail view with who the resource is shared with
+- copy password (`c`), username (`u`), URI (`l`) or the current TOTP code (`t`); passwords are masked until `p`
+
+Copied passwords and TOTP codes are removed from the clipboard after 30 seconds, on exit and when the terminal or SSH session closes (SIGHUP), but only if the clipboard still holds them; a failed clear is retried and reported. Clipboard tools (`pbcopy`, `wl-copy`, `xclip`, `xsel`) are taken from `/usr/bin` or `/bin` only, never from `PATH`. Without one, OSC 52 is written to the controlling terminal (`/dev/tty`) only, never to a redirected stdout or stderr; the terminal cannot confirm the clear, so the status says "requested". Text from the server is stripped of control and format characters before it is drawn. Clipboard managers may keep a copied password in their history before the clear; exclude the terminal in their settings. Press `?` inside the UI for all keys.
+
 # Scripting
 
 For scripting we have a `-j` or `--json` flag to convert the output for the `create`, `get` and `list` commands to JSON for easier parsing in scripts.
