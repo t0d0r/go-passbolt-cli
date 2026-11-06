@@ -32,7 +32,7 @@ type wizardIO struct {
 }
 
 func (w *wizardIO) printf(format string, a ...any) {
-	_, _ = fmt.Fprintf(w.out, format, a...)
+	_, _ = io.WriteString(w.out, fmt.Sprintf(format, a...))
 }
 
 // ask shows label with def and returns the answer, or def on an empty line.
@@ -494,7 +494,7 @@ settings are written; a TOTP seed only in noninteractive-totp mode and a
 plain-text password only if you choose to keep an existing one.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		w := &wizardIO{in: bufio.NewReader(os.Stdin), out: cmd.OutOrStdout()}
+		w := &wizardIO{in: bufio.NewReader(os.Stdin), out: util.Out}
 		deps := wizardDeps{
 			checkServer: wizardCheckServer,
 			testLogin:   wizardTestLogin,

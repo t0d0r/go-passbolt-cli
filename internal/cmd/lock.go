@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/passbolt/go-passbolt-cli/internal/util"
 	"github.com/spf13/cobra"
@@ -28,7 +27,7 @@ MFA for the user in Passbolt to revoke it.`,
 			if err := util.ForgetAll(); err != nil {
 				return err
 			}
-			fmt.Println("All stored passwords and MFA cookies of this CLI removed")
+			util.Println("All stored passwords and MFA cookies of this CLI removed")
 			return nil
 		}
 		serverAddress := viper.GetString("serverAddress")
@@ -43,11 +42,11 @@ MFA for the user in Passbolt to revoke it.`,
 		removed, err := util.ForgetPassword(serverAddress, userPrivateKey)
 		switch {
 		case err != nil:
-			fmt.Fprintf(os.Stderr, "Warning: keyring: %v\n", err)
+			util.Eprintf("Warning: keyring: %v\n", err)
 		case removed:
-			fmt.Println("Password removed from the keyring")
+			util.Println("Password removed from the keyring")
 		default:
-			fmt.Println("No password stored in the keyring")
+			util.Println("No password stored in the keyring")
 		}
 
 		mfaCache, err := util.NewMFACookieCache(serverAddress, userPrivateKey)
@@ -57,7 +56,7 @@ MFA for the user in Passbolt to revoke it.`,
 		if err := mfaCache.Clear(); err != nil {
 			return fmt.Errorf("removing MFA cookie: %w", err)
 		}
-		fmt.Println("MFA cookie removed")
+		util.Println("MFA cookie removed")
 		return nil
 	},
 }

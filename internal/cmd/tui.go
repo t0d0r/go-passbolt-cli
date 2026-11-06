@@ -27,7 +27,9 @@ Copied passwords and TOTP codes are cleared from the clipboard after 30
 seconds and on exit. Press ? inside the UI for the keys.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !term.IsTerminal(int(os.Stdout.Fd())) {
+		// bubbletea draws on the raw terminal, not through util.Out, so the
+		// check has to look at the same stream.
+		if !term.IsTerminal(int(os.Stdout.Fd())) { //nolint:forbidigo
 			return fmt.Errorf("tui needs an interactive terminal")
 		}
 		if demo, _ := cmd.Flags().GetBool("demo"); demo {
@@ -98,14 +100,14 @@ func runTUI(store tui.Store, server string, skipped func() int) error {
 	}
 	_, runErr := program.Run()
 	if msg := model.ClearClipboard(); msg != "" {
-		fmt.Fprintln(os.Stderr, "Warning:", msg, "- clear your clipboard manually")
+		util.Eprintln("Warning:", msg, "- clear your clipboard manually")
 	}
 	if errors.Is(runErr, tea.ErrProgramKilled) {
 		runErr = nil // ended by a signal; clipboard and logout handled
 	}
 	if skipped != nil && skipped() > 0 {
 		n := skipped()
-		fmt.Fprintf(os.Stderr, "Note: %d resources of unsupported types were not shown\n", n)
+		util.Eprintf("Note: %d resources of unsupported types were not shown\n", n)
 	}
 	return runErr
 }

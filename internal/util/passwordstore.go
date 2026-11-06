@@ -95,7 +95,7 @@ func newUnlockedClient(httpClient *http.Client, serverAddress, userPrivateKey, c
 		var err error
 		account, err = keyringAccount(serverAddress, userPrivateKey)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: keyring disabled: %v\n", err)
+			Eprintf("Warning: keyring disabled: %v\n", err)
 		}
 	}
 
@@ -110,13 +110,13 @@ func newUnlockedClient(httpClient *http.Client, serverAddress, userPrivateKey, c
 			if !isUnlockError(cerr) {
 				return nil, cerr
 			}
-			fmt.Fprintln(os.Stderr, "Stored password no longer unlocks the key, removing it from the keyring")
+			Eprintln("Stored password no longer unlocks the key, removing it from the keyring")
 			if derr := keyringBackend.Delete(keyringService, account); derr != nil && !errors.Is(derr, errPasswordNotFound) {
-				fmt.Fprintf(os.Stderr, "Warning: removing stored password: %v\n", derr)
+				Eprintf("Warning: removing stored password: %v\n", derr)
 			}
 		case errors.Is(err, errPasswordNotFound):
 		default:
-			fmt.Fprintf(os.Stderr, "Warning: reading %s: %v\n", keyringBackend.Name(), err)
+			Eprintf("Warning: reading %s: %v\n", keyringBackend.Name(), err)
 			account = ""
 		}
 	}
@@ -131,7 +131,7 @@ func newUnlockedClient(httpClient *http.Client, serverAddress, userPrivateKey, c
 	}
 	if account != "" {
 		if err := keyringBackend.Set(keyringService, account, password); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: saving password to %s: %v\n", keyringBackend.Name(), err)
+			Eprintf("Warning: saving password to %s: %v\n", keyringBackend.Name(), err)
 		}
 	}
 	return client, nil
