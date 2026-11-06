@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	cel.dev/cel-go v0.33.2
 	github.com/ProtonMail/gopenpgp/v3 v3.5.2
+	github.com/keybase/go-keychain v0.0.1
 	github.com/passbolt/go-passbolt v0.8.4
 	github.com/pterm/pterm v0.12.84
 	github.com/rogpeppe/go-internal v1.16.0
@@ -13,6 +14,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/tobischo/gokeepasslib/v3 v3.7.1
+	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 )
@@ -38,6 +40,7 @@ require (
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -48,6 +51,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

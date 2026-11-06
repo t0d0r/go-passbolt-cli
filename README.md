@@ -84,6 +84,20 @@ If you would rather not keep the secrets on disk, store only `serverAddress` and
 
 Note that `--debug` prints every stored setting, secrets included. It asks before doing so, and skips the dump entirely when it is not attached to a terminal unless you pass `--yes`.
 
+## Keep the key password in the OS keyring
+
+`--passwordStore keyring` (config key `passwordStore`, default `none`) keeps the private key password in the OS keyring: macOS Keychain, Secret Service on Linux, Credential Manager on Windows. The password is saved only after it unlocked the key, and a stored password that no longer unlocks the key is removed. A `userPassword` from the config file or the command line always wins and is never copied.
+
+On macOS a cgo build uses the native Keychain API: the item is readable without a prompt only by the passbolt binary that created it (a rebuilt binary asks once to allow it again), stays on this device and is usable only while the Mac is unlocked. Without cgo the item is created through `/usr/bin/security` and is readable by any process of the user; the CLI warns about it. Headless Linux hosts usually have no Secret Service; the CLI then warns and asks for the password as before.
+
+```bash
+passbolt configure --passwordStore keyring
+passbolt lock         # forget the stored password and the remembered MFA cookie
+passbolt lock --all   # ... for every server and key
+```
+
+`lock` deletes local copies only. A remembered MFA token stays valid on the server until it expires; reset MFA for the user in Passbolt to revoke it. Any program running as you while the keyring is unlocked may read the stored password, so enable this only on a machine you trust.
+
 # Usage
 
 Generally, the structure of commands are like this:
@@ -143,7 +157,7 @@ You can set up MFA also using the configuration sub command. Only TOTP is suppor
 
 ## Remember MFA for this device
 
-In `interactive-totp` mode, `--mfaRemember` (config key `mfaRemember`, default `false`) asks the server to remember the TOTP verification for this device for 30 days, if the organisation policy "Remember a month" is enabled, and caches the cookie in `go-passbolt-cli/mfa` under the user cache directory with mode 0600. The cookie is only used over https. Delete that directory to forget it locally; a remembered token stays valid on the server until it expires, so reset MFA for the user in Passbolt to revoke it.
+In `interactive-totp` mode, `--mfaRemember` (config key `mfaRemember`, default `false`) asks the server to remember the TOTP verification for this device for 30 days, if the organisation policy "Remember a month" is enabled, and caches the cookie in `go-passbolt-cli/mfa` under the user cache directory with mode 0600. The cookie is only used over https. `passbolt lock` forgets it locally; a remembered token stays valid on the server until it expires, so reset MFA for the user in Passbolt to revoke it.
 
 # Server Verification
 
