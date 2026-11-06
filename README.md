@@ -72,6 +72,10 @@ Notes:
 - Passwordless private keys are not supported.
 - MFA settings can also be saved permanently this way.
 
+## Interactive configuration
+
+`passbolt wizard` asks step by step for the server address (with a reachability check), self-signed TLS, the private key (validated, fingerprint shown), password storage and remember-me (both opt-in, each with a short explanation of the risk) and the MFA mode. It shows a summary, offers a login test that stores nothing, then writes the config file with mode 0600. Existing settings are offered as defaults, so a partial configuration is completed. A TOTP seed is written only in `noninteractive-totp` mode, a plain-text password only if you choose to keep an existing one.
+
 ## The config file
 
 `passbolt configure` writes to `$XDG_CONFIG_HOME/go-passbolt-cli/go-passbolt-cli.toml` (`~/.config/...` by default; `~/Library/Application Support/...` on macOS, `%AppData%\...` on Windows), or to the path given by `--config`.
