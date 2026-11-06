@@ -6,3 +6,4 @@
 | [auth-cache.md](auth-cache.md) | Not asking for the MFA code and the key passphrase on every command |
 | [wizard.md](wizard.md) | `passbolt wizard`: step-by-step configuration that reuses existing settings |
 | [tui.md](tui.md) | `passbolt tui`: browse folders/resources, search, copy credentials with clipboard auto-clear |
+| [upstream.md](upstream.md) | Upstream contribution rules, the all-features branch and the per-feature PR branches |

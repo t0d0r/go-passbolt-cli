@@ -7,7 +7,7 @@ If you want to do something more complicated: [this Go module](https://github.co
 > [!NOTE]
 > **Unofficial fork.** This repository is a personal fork of
 > [passbolt/go-passbolt-cli](https://github.com/passbolt/go-passbolt-cli)
-> (based on v0.5.2). It is not affiliated with or endorsed by Passbolt SA;
+> (based on v0.5.3). It is not affiliated with or endorsed by Passbolt SA;
 > "Passbolt" is their trademark. The additions below are not part of the
 > upstream project; report problems with them here, not upstream.
 

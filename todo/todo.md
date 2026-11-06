@@ -19,3 +19,8 @@
 - [ ] after installing the cgo build: remove the old Keychain item created via /usr/bin/security (`security delete-generic-password -s go-passbolt-cli`)
 - [x] README GIF of the TUI with made-up data (docs/tui.gif, make gif)
 - [ ] investigate stale lines after layout changes seen in vhs (specs/tui.md, Open)
+- [x] rebase local/session-cache onto upstream main (v0.5.3); fix forbidigo lint, move identity helpers (specs/upstream.md)
+- [x] per-feature PR branches from upstream main: feat/mfa-remember, feat/password-keyring, feat/wizard, feat/tui (specs/upstream.md)
+- [ ] sign the Passbolt CLA; open an issue or forum thread per feature before any PR (specs/upstream.md)
+- [ ] push feat/* to the fork and open PRs against passbolt/go-passbolt-cli main, one per feature, stacked ones noting their base
+- [ ] force-push local/session-cache to the fork (history rewritten by the rebase; backup tag backup/session-cache-pre-rebase)
