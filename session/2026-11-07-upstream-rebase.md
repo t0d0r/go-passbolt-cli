@@ -30,10 +30,17 @@
 - The Passbolt Individual Contributor License Agreement is signed through
   cla-assistant, so the CLA check will pass on PRs from this GitHub account.
 
+- Pushed to the fork: feat/mfa-remember, feat/password-keyring,
+  feat/wizard, feat/tui and local/session-cache (force-with-lease, the
+  rebase rewrote its history).
+- Upstream issues opened, one per feature, each asking whether a PR is
+  wanted and whether an internal ticket exists: #143 MFA remember-me,
+  #144 keyring password store and lock, #145 wizard, #146 tui. The issues
+  link the fork branches. No PR is open.
+
 ## Open
 
-- Nothing is pushed. `local/session-cache` on the fork remote still has the
-  old history; pushing it needs --force-with-lease.
+- Replies on #143 to #146 decide which PRs get opened.
 - The `feat/tui` go.mod pins github.com/charmbracelet/x/ansi v0.10.1;
   `go mod tidy` from upstream's go.mod otherwise picks v0.11.9, which does
   not compile with bubbletea v1.3.10's cellbuf.
@@ -62,9 +69,9 @@ go vet ./... && golangci-lint run ./... && go test ./...
 
 ## Next step
 
-Open one upstream issue or forum thread per feature, then
-push `feat/mfa-remember` and `feat/tui` first and open their PRs; push
-`local/session-cache` with --force-with-lease.
+Watch #143 to #146. For each feature upstream wants, open a PR from its
+branch against upstream main, referencing the issue; stacked branches say
+which PR they build on.
 
 ## Security Note
 

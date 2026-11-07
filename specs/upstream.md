@@ -31,6 +31,9 @@ feature before sending a PR, then send one small PR per feature. The fork
 stays its own distribution either way (upstream lists community-maintained
 packages as an accepted pattern).
 
+Issues opened 2026-11-07: #143 (mfa-remember), #144 (password-keyring),
+#145 (wizard), #146 (tui).
+
 ## Branch layout
 
 | Branch | Base | Content |
