@@ -11,7 +11,10 @@ the branches are laid out to make that possible.
 - License: MIT. Security issues go through Passbolt's responsible disclosure
   process (SECURITY.md), never a public issue or PR.
 - Every PR must pass the CLA assistant check (cla-assistant.io, one-time
-  signature; text at gist.github.com/CLAassistant/3a73e4cd729c9d0a6e30).
+  signature; the "Passbolt Individual Contributor License Agreement" is at
+  gist.github.com/fd4d894872fc1503fbbe8e30f3492116, Passbolt SA, Luxembourg
+  law, non-exclusive copyright and patent license, contributor keeps
+  ownership, outbound license limited to OSI-approved licenses).
 - Code must pass golangci-lint (.golangci.yml), staticcheck and the gitleaks
   pre-commit hook. Since v0.5.3 forbidigo bans fmt.Print*/Fprint* and the
   raw os.Stdout/os.Stderr streams: output goes through util.Print*/Eprint*
