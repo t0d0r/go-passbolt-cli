@@ -27,6 +27,8 @@
   lint rules, PRs to `main`, external PRs closed since March 2026 in favour
   of internal tickets. Decision: ask upstream per feature before a PR.
 - README: fork note now says based on v0.5.3.
+- The Passbolt Individual Contributor License Agreement is signed through
+  cla-assistant, so the CLA check will pass on PRs from this GitHub account.
 
 ## Open
 
@@ -60,7 +62,7 @@ go vet ./... && golangci-lint run ./... && go test ./...
 
 ## Next step
 
-Sign the CLA, open one upstream issue or forum thread per feature, then
+Open one upstream issue or forum thread per feature, then
 push `feat/mfa-remember` and `feat/tui` first and open their PRs; push
 `local/session-cache` with --force-with-lease.
 
